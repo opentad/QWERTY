@@ -13,11 +13,12 @@
     --cy: #27e0d0;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { margin: 0; height: 100%; }
   body {
     height: 100dvh;
     display: grid;
-    grid-template-columns: 1fr 290px;
+    grid-template-columns: 1fr 310px;
     background: var(--ink);
     color: var(--paper);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -49,6 +50,7 @@
     min-height: 0;
     display: flex; flex-direction: column; gap: 8px;
   }
+  section { display: flex; flex-direction: column; gap: 8px; }
   .row { display: flex; gap: 6px; flex-wrap: wrap; }
   .btn {
     flex: 1 1 auto;
@@ -64,12 +66,44 @@
     user-select: none;
   }
   .btn:active { background: var(--cy); color: var(--ink); border-color: var(--cy); }
-  .btn:focus-visible, input:focus-visible { outline: 3px solid var(--cy); outline-offset: 2px; }
+  .btn.on { background: var(--mag); border-color: var(--mag); color: var(--ink); }
+  .btn:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--cy); outline-offset: 2px; }
   #status { min-height: 18px; color: var(--cy); font-size: 13px; }
   #status.err { color: var(--mag); }
   .opt { display: flex; align-items: center; gap: 8px; min-height: 30px; }
   .opt input { width: 20px; height: 20px; accent-color: var(--mag); }
+  .hint { font-size: 13px; opacity: .7; line-height: 1.3; }
 
+  /* вкладки */
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .tab {
+    min-height: 38px; font: inherit; font-weight: 700; cursor: pointer;
+    background: transparent; color: var(--paper);
+    border: 2px solid var(--paper); border-radius: 4px;
+  }
+  .tab[aria-selected="true"] { background: var(--paper); color: var(--ink); }
+
+  /* кадры */
+  .frames { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 6px; }
+  .chip {
+    flex: 0 0 auto; width: 40px; height: 40px;
+    font: inherit; font-weight: 700; cursor: pointer;
+    background: transparent; color: var(--paper);
+    border: 2px solid var(--paper); border-radius: 4px;
+  }
+  .chip.cur { background: var(--cy); border-color: var(--cy); color: var(--ink); }
+
+  /* ползунки */
+  select {
+    width: 100%; min-height: 40px; padding: 0 8px;
+    background: var(--ink); color: var(--paper);
+    border: 2px solid var(--paper); border-radius: 4px; font: inherit;
+  }
+  .ax { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; align-items: center; }
+  .ax output { font-variant-numeric: tabular-nums; color: var(--cy); }
+  .ax input[type=range] { grid-column: 1 / -1; width: 100%; height: 30px; accent-color: var(--mag); margin: 0; }
+
+  /* внешность */
   #parts { display: flex; flex-direction: column; gap: 4px; }
   .part {
     display: grid; grid-template-columns: 1fr 40px 84px; gap: 6px; align-items: center;
@@ -86,7 +120,7 @@
 
   /* вертикальный экран: панель снизу */
   @media (max-aspect-ratio: 1/1) {
-    body { grid-template-columns: 1fr; grid-template-rows: 1fr minmax(0, 42dvh); }
+    body { grid-template-columns: 1fr; grid-template-rows: 1fr minmax(0, 46dvh); }
     #panel { margin: 0 14px 14px 10px; box-shadow: 5px 5px 0 var(--mag); }
   }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -105,17 +139,61 @@
   <div id="stage"><canvas id="view"></canvas></div>
 
   <aside id="panel">
-    <div class="row">
-      <label class="btn">Своя модель<input id="file" type="file" accept=".vrm,.glb" hidden></label>
-      <button class="btn" id="reset" type="button">Сбросить</button>
+    <div class="tabs" role="tablist">
+      <button class="tab" id="tabPoseBtn" role="tab" aria-selected="true" type="button">Поза</button>
+      <button class="tab" id="tabLookBtn" role="tab" aria-selected="false" type="button">Внешность</button>
     </div>
     <div class="row">
       <button class="btn" id="camFull" type="button">Весь рост</button>
       <button class="btn" id="camFace" type="button">Лицо</button>
     </div>
-    <label class="opt"><input type="checkbox" id="fill" checked>Красить сплошным цветом</label>
     <div id="status" role="status" aria-live="polite"></div>
-    <div id="parts"></div>
+
+    <!-- вкладка: поза и анимация -->
+    <section id="tabPose">
+      <div class="frames" id="frames" aria-label="Кадры"></div>
+      <div class="row">
+        <button class="btn" id="addFrame" type="button">Добавить кадр</button>
+        <button class="btn" id="delFrame" type="button">Удалить</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="play" type="button">Играть</button>
+      </div>
+      <label class="opt"><input type="checkbox" id="loopEl" checked>Повторять</label>
+      <div class="ax">
+        <span>Секунд между кадрами</span><output id="od">0.8</output>
+        <input id="sd" type="range" min="0.2" max="2" step="0.1" value="0.8">
+      </div>
+
+      <select id="jointSel" aria-label="Сустав"></select>
+      <div class="hint">Или нажми на точку на персонаже. Левое и правое считаются со стороны персонажа.</div>
+      <div class="ax">
+        <span>Вперёд-назад</span><output id="ox">0°</output>
+        <input id="sx" type="range" min="-180" max="180" step="1" value="0">
+      </div>
+      <div class="ax">
+        <span>Поворот</span><output id="oy">0°</output>
+        <input id="sy" type="range" min="-180" max="180" step="1" value="0">
+      </div>
+      <div class="ax">
+        <span>В сторону</span><output id="oz">0°</output>
+        <input id="sz" type="range" min="-180" max="180" step="1" value="0">
+      </div>
+      <div class="row">
+        <button class="btn" id="zeroJoint" type="button">Обнулить сустав</button>
+        <button class="btn" id="zeroPose" type="button">Обнулить позу</button>
+      </div>
+    </section>
+
+    <!-- вкладка: внешность -->
+    <section id="tabLook" hidden>
+      <div class="row">
+        <label class="btn">Своя модель<input id="file" type="file" accept=".vrm,.glb" hidden></label>
+        <button class="btn" id="reset" type="button">Сбросить вид</button>
+      </div>
+      <label class="opt"><input type="checkbox" id="fill" checked>Красить сплошным цветом</label>
+      <div id="parts"></div>
+    </section>
   </aside>
 
 <script type="module">
@@ -125,19 +203,21 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 
 const SAMPLE_URL = 'https://pixiv.github.io/three-vrm/packages/three-vrm/examples/models/VRM1_Constraint_Twist_Sample.vrm';
+const SAVE_KEY = 'anim-project-v1';
 
-const stage = document.getElementById('stage');
-const canvas = document.getElementById('view');
-const statusEl = document.getElementById('status');
-const partsEl = document.getElementById('parts');
-const fillEl = document.getElementById('fill');
+const $ = id => document.getElementById(id);
+const stage = $('stage');
+const canvas = $('view');
+const statusEl = $('status');
+const partsEl = $('parts');
+const fillEl = $('fill');
 
 function say(text, isErr = false) {
   statusEl.textContent = text;
   statusEl.className = isErr ? 'err' : '';
 }
 
-/* --- сцена --- */
+/* ---------- сцена ---------- */
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setClearColor(0x000000, 0);
@@ -166,7 +246,51 @@ function resize() {
 new ResizeObserver(resize).observe(stage);
 resize();
 
-/* --- модель --- */
+/* ---------- состояние анимации ---------- */
+const JOINT_DEFS = [
+  ['head', 'Голова'], ['neck', 'Шея'],
+  ['upperChest', 'Верх груди'], ['chest', 'Грудь'], ['spine', 'Поясница'], ['hips', 'Таз'],
+  ['leftShoulder', 'Левая ключица'], ['leftUpperArm', 'Левое плечо'],
+  ['leftLowerArm', 'Левый локоть'], ['leftHand', 'Левая кисть'],
+  ['rightShoulder', 'Правая ключица'], ['rightUpperArm', 'Правое плечо'],
+  ['rightLowerArm', 'Правый локоть'], ['rightHand', 'Правая кисть'],
+  ['leftUpperLeg', 'Левое бедро'], ['leftLowerLeg', 'Левое колено'], ['leftFoot', 'Левая стопа'],
+  ['rightUpperLeg', 'Правое бедро'], ['rightLowerLeg', 'Правое колено'], ['rightFoot', 'Правая стопа']
+];
+
+function basePose() {
+  return { leftUpperArm: [0, 0, -1.15], rightUpperArm: [0, 0, 1.15] };
+}
+
+let frames = [{ pose: basePose() }];
+let cur = 0;
+let dur = 0.8;
+let loop = true;
+let playing = false;
+let playT = 0;
+let joints = [];      // [{ key, label, node }]
+let sel = 'head';
+
+function loadSaved() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (s && Array.isArray(s.frames) && s.frames.length) {
+      frames = s.frames;
+      dur = s.dur || 0.8;
+      loop = s.loop !== false;
+    }
+  } catch (e) { /* нет сохранения */ }
+}
+let saveTimer = 0;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify({ frames, dur, loop })); } catch (e) {}
+  }, 300);
+}
+loadSaved();
+
+/* ---------- модель ---------- */
 const loader = new GLTFLoader();
 loader.register(parser => new VRMLoaderPlugin(parser));
 
@@ -281,15 +405,233 @@ function buildPanel() {
   });
 }
 
-function setPose() {
-  const h = vrm.humanoid;
-  const l = h.getNormalizedBoneNode('leftUpperArm');
-  const r = h.getNormalizedBoneNode('rightUpperArm');
-  if (l) l.rotation.z = -1.15;
-  if (r) r.rotation.z = 1.15;
+/* ---------- позы ---------- */
+const _e = new THREE.Euler();
+const _qa = new THREE.Quaternion();
+const _qb = new THREE.Quaternion();
+
+function quatOf(pose, key, out) {
+  const a = pose[key] || [0, 0, 0];
+  return out.setFromEuler(_e.set(a[0], a[1], a[2]));
 }
 
-/* --- камера --- */
+function applyPose(pose) {
+  joints.forEach(j => j.node.quaternion.copy(quatOf(pose, j.key, _qa)));
+}
+
+function applyBlend(poseA, poseB, t) {
+  const k = t * t * (3 - 2 * t);
+  joints.forEach(j => {
+    quatOf(poseA, j.key, _qa);
+    quatOf(poseB, j.key, _qb);
+    j.node.quaternion.copy(_qa.slerp(_qb, k));
+  });
+}
+
+function rebuildJoints() {
+  joints = [];
+  JOINT_DEFS.forEach(([key, label]) => {
+    const node = vrm.humanoid.getNormalizedBoneNode(key);
+    if (node) joints.push({ key, label, node });
+  });
+  if (!joints.find(j => j.key === sel)) sel = joints.length ? joints[0].key : null;
+  const selEl = $('jointSel');
+  selEl.innerHTML = '';
+  joints.forEach(j => {
+    const o = document.createElement('option');
+    o.value = j.key; o.textContent = j.label;
+    selEl.appendChild(o);
+  });
+  selEl.value = sel;
+  markGeo.setDrawRange(0, joints.length);
+  syncSliders();
+}
+
+/* ---------- ползунки сустава ---------- */
+const sliders = [$('sx'), $('sy'), $('sz')];
+const outs = [$('ox'), $('oy'), $('oz')];
+const DEG = 180 / Math.PI;
+
+function syncSliders() {
+  const a = (frames[cur].pose[sel]) || [0, 0, 0];
+  sliders.forEach((s, i) => {
+    const v = Math.round(a[i] * DEG);
+    s.value = v;
+    outs[i].textContent = v + '°';
+  });
+}
+
+sliders.forEach((s, i) => {
+  s.addEventListener('input', () => {
+    if (playing || !sel) return;
+    const pose = frames[cur].pose;
+    if (!pose[sel]) pose[sel] = [0, 0, 0];
+    pose[sel][i] = Number(s.value) / DEG;
+    outs[i].textContent = s.value + '°';
+    save();
+  });
+});
+
+function selectJoint(key) {
+  sel = key;
+  $('jointSel').value = key;
+  syncSliders();
+}
+$('jointSel').addEventListener('change', e => selectJoint(e.target.value));
+
+$('zeroJoint').addEventListener('click', () => {
+  if (playing || !sel) return;
+  delete frames[cur].pose[sel];
+  syncSliders(); save();
+});
+$('zeroPose').addEventListener('click', () => {
+  if (playing) return;
+  frames[cur].pose = {};
+  syncSliders(); save();
+});
+
+/* ---------- кадры ---------- */
+const framesEl = $('frames');
+
+function buildFrames() {
+  framesEl.innerHTML = '';
+  frames.forEach((f, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (i === cur ? ' cur' : '');
+    b.textContent = String(i + 1);
+    b.setAttribute('aria-label', 'Кадр ' + (i + 1));
+    b.addEventListener('click', () => {
+      if (playing) stopPlay();
+      cur = i;
+      markFrame();
+      syncSliders();
+    });
+    framesEl.appendChild(b);
+  });
+}
+function markFrame() {
+  [...framesEl.children].forEach((c, i) => c.classList.toggle('cur', i === cur));
+  const c = framesEl.children[cur];
+  if (c && c.scrollIntoView) c.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+$('addFrame').addEventListener('click', () => {
+  if (playing) stopPlay();
+  const copy = JSON.parse(JSON.stringify(frames[cur]));
+  frames.splice(cur + 1, 0, copy);
+  cur += 1;
+  buildFrames(); syncSliders(); save();
+  say('Кадров: ' + frames.length);
+});
+$('delFrame').addEventListener('click', () => {
+  if (playing) stopPlay();
+  if (frames.length < 2) { say('Последний кадр удалить нельзя', true); return; }
+  frames.splice(cur, 1);
+  if (cur >= frames.length) cur = frames.length - 1;
+  buildFrames(); syncSliders(); save();
+  say('Кадров: ' + frames.length);
+});
+
+const playBtn = $('play');
+function startPlay() {
+  if (frames.length < 2) { say('Добавь хотя бы два кадра', true); return; }
+  playing = true;
+  playT = cur * dur;
+  playBtn.textContent = 'Стоп';
+  playBtn.classList.add('on');
+  markGroup.visible = false;
+  say('');
+}
+function stopPlay() {
+  playing = false;
+  playBtn.textContent = 'Играть';
+  playBtn.classList.remove('on');
+  markGroup.visible = true;
+  markFrame();
+  syncSliders();
+}
+playBtn.addEventListener('click', () => (playing ? stopPlay() : startPlay()));
+
+$('loopEl').addEventListener('change', e => { loop = e.target.checked; save(); });
+$('sd').addEventListener('input', e => {
+  dur = Number(e.target.value);
+  $('od').textContent = dur.toFixed(1);
+  save();
+});
+
+/* ---------- точки суставов на персонаже ---------- */
+const markGroup = new THREE.Group();
+scene.add(markGroup);
+
+function dotTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#000';
+  g.beginPath(); g.arc(32, 32, 30, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#fff';
+  g.beginPath(); g.arc(32, 32, 23, 0, Math.PI * 2); g.fill();
+  return new THREE.CanvasTexture(c);
+}
+const dotTex = dotTexture();
+
+function makePoints(count, size, color) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+  const mat = new THREE.PointsMaterial({
+    size, sizeAttenuation: false, map: dotTex, color,
+    alphaTest: 0.4, transparent: true, depthTest: false, depthWrite: false
+  });
+  const pts = new THREE.Points(geo, mat);
+  pts.frustumCulled = false;
+  pts.renderOrder = 999;
+  markGroup.add(pts);
+  return { geo, pts };
+}
+const allMarks = makePoints(32, 14, 0x27e0d0);
+const selMark = makePoints(1, 24, 0xff2e88);
+const markGeo = allMarks.geo;
+selMark.pts.renderOrder = 1000;
+
+const _v = new THREE.Vector3();
+function updateMarkers() {
+  if (!markGroup.visible) return;
+  const arr = markGeo.attributes.position.array;
+  joints.forEach((j, i) => {
+    j.node.getWorldPosition(_v);
+    arr[i * 3] = _v.x; arr[i * 3 + 1] = _v.y; arr[i * 3 + 2] = _v.z;
+    if (j.key === sel) selMark.geo.attributes.position.setXYZ(0, _v.x, _v.y, _v.z);
+  });
+  markGeo.attributes.position.needsUpdate = true;
+  selMark.geo.attributes.position.needsUpdate = true;
+}
+
+/* нажатие по точке выбирает сустав */
+let down = null;
+canvas.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+canvas.addEventListener('pointerup', e => {
+  if (!down || playing || $('tabPose').hidden) { down = null; return; }
+  const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+  const quick = performance.now() - down.t < 400;
+  down = null;
+  if (moved > 8 || !quick) return;
+  const rect = canvas.getBoundingClientRect();
+  const px = e.clientX - rect.left, py = e.clientY - rect.top;
+  let best = null, bestD = 34;
+  joints.forEach(j => {
+    j.node.getWorldPosition(_v);
+    _v.project(camera);
+    if (_v.z > 1) return;
+    const sx = (_v.x * 0.5 + 0.5) * rect.width;
+    const sy = (-_v.y * 0.5 + 0.5) * rect.height;
+    const d = Math.hypot(sx - px, sy - py);
+    if (d < bestD) { bestD = d; best = j; }
+  });
+  if (best) selectJoint(best.key);
+});
+
+/* ---------- камера ---------- */
 function frameFull() {
   if (!vrm) return;
   const box = new THREE.Box3().setFromObject(vrm.scene);
@@ -313,7 +655,7 @@ function frameFace() {
   controls.update();
 }
 
-/* --- загрузка --- */
+/* ---------- загрузка модели ---------- */
 async function loadModel(url) {
   say('Загружаю модель…');
   try {
@@ -327,28 +669,38 @@ async function loadModel(url) {
     vrm = next;
     VRMUtils.rotateVRM0(vrm);
     scene.add(vrm.scene);
-    setPose();
     collectParts();
     buildPanel();
+    rebuildJoints();
     vrm.update(0);
     frameFull();
-    say('Готово. Частей: ' + parts.length);
+    say('Готово. Частей: ' + parts.length + ', суставов: ' + joints.length);
   } catch (e) {
     console.error(e);
-    say('Не получилось загрузить. Выбери .vrm через «Своя модель».', true);
+    say('Не получилось загрузить. Выбери .vrm через «Внешность» → «Своя модель».', true);
   }
 }
 
-/* --- кнопки --- */
-document.getElementById('camFull').addEventListener('click', frameFull);
-document.getElementById('camFace').addEventListener('click', frameFace);
+/* ---------- вкладки и кнопки ---------- */
+function showTab(pose) {
+  $('tabPose').hidden = !pose;
+  $('tabLook').hidden = pose;
+  $('tabPoseBtn').setAttribute('aria-selected', String(pose));
+  $('tabLookBtn').setAttribute('aria-selected', String(!pose));
+  markGroup.visible = pose && !playing;
+}
+$('tabPoseBtn').addEventListener('click', () => showTab(true));
+$('tabLookBtn').addEventListener('click', () => showTab(false));
+
+$('camFull').addEventListener('click', frameFull);
+$('camFace').addEventListener('click', frameFace);
 fillEl.addEventListener('change', () => parts.forEach(syncTextures));
-document.getElementById('reset').addEventListener('click', () => {
+$('reset').addEventListener('click', () => {
   parts.forEach(restore);
   buildPanel();
   say('Цвета и видимость сброшены');
 });
-document.getElementById('file').addEventListener('change', e => {
+$('file').addEventListener('change', e => {
   const f = e.target.files && e.target.files[0];
   if (!f) return;
   const url = URL.createObjectURL(f);
@@ -356,11 +708,41 @@ document.getElementById('file').addEventListener('change', e => {
   e.target.value = '';
 });
 
-/* --- цикл --- */
+/* ---------- старт интерфейса ---------- */
+$('sd').value = dur;
+$('od').textContent = dur.toFixed(1);
+$('loopEl').checked = loop;
+buildFrames();
+
+/* ---------- главный цикл ---------- */
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = clock.getDelta();
-  if (vrm) vrm.update(dt);
+
+  if (vrm && joints.length) {
+    if (playing) {
+      const n = frames.length;
+      const segs = loop ? n : n - 1;
+      const total = segs * dur;
+      playT += dt;
+      if (!loop && playT >= total) {
+        cur = n - 1;
+        applyPose(frames[cur].pose);
+        stopPlay();
+      } else {
+        const t = loop ? playT % total : playT;
+        const seg = Math.min(Math.floor(t / dur), segs - 1);
+        const a = (t - seg * dur) / dur;
+        applyBlend(frames[seg].pose, frames[(seg + 1) % n].pose, a);
+        if (seg !== cur) { cur = seg; markFrame(); }
+      }
+    } else {
+      applyPose(frames[cur].pose);
+    }
+    vrm.update(dt);
+    updateMarkers();
+  }
+
   controls.update();
   renderer.render(scene, camera);
 });
