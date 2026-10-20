@@ -67,7 +67,7 @@
   }
   .btn:active { background: var(--cy); color: var(--ink); border-color: var(--cy); }
   .btn.on { background: var(--mag); border-color: var(--mag); color: var(--ink); }
-  .btn:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--cy); outline-offset: 2px; }
+  .btn:focus-visible, input:focus-visible, select:focus-visible, .sw:focus-visible { outline: 3px solid var(--cy); outline-offset: 2px; }
   #status { min-height: 18px; color: var(--cy); font-size: 13px; }
   #status.err { color: var(--mag); }
   .opt { display: flex; align-items: center; gap: 8px; min-height: 30px; }
@@ -75,9 +75,9 @@
   .hint { font-size: 13px; opacity: .7; line-height: 1.3; }
 
   /* вкладки */
-  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .tab {
-    min-height: 38px; font: inherit; font-weight: 700; cursor: pointer;
+    min-height: 38px; padding: 0 4px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
     background: transparent; color: var(--paper);
     border: 2px solid var(--paper); border-radius: 4px;
   }
@@ -111,12 +111,29 @@
     border-top: 1px solid rgba(236,233,245,.18);
   }
   .part.off .name { opacity: .4; text-decoration: line-through; }
+  .part.sel { border-top-color: var(--cy); }
+  .part.sel .name { color: var(--cy); }
   .name { overflow-wrap: anywhere; line-height: 1.2; }
-  .part input[type=color] {
-    width: 40px; height: 34px; padding: 0;
-    background: none; border: 2px solid var(--paper); border-radius: 4px;
+  .sw {
+    width: 40px; height: 34px; padding: 0; cursor: pointer;
+    border: 2px solid var(--paper); border-radius: 4px;
   }
+  .part.sel .sw { border-color: var(--cy); box-shadow: 0 0 0 2px var(--cy); }
   .part .btn { min-height: 34px; padding: 0 6px; font-size: 13px; }
+
+  /* свой выбор цвета */
+  #pickerHost { padding: 4px 0 8px; }
+  .picker { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .picker-cv { display: block; max-width: 100%; height: auto !important; touch-action: none; }
+  .pk-row { display: grid; grid-template-columns: 1.7fr 1fr 1fr 1fr; gap: 6px; width: 100%; }
+  .pk-row input {
+    width: 100%; min-width: 0; min-height: 36px; padding: 0 6px;
+    background: var(--ink); color: var(--paper);
+    border: 2px solid var(--paper); border-radius: 4px;
+    font: inherit; font-variant-numeric: tabular-nums;
+  }
+  .pk-n { text-align: center; padding: 0 2px !important; -moz-appearance: textfield; appearance: textfield; }
+  .pk-n::-webkit-outer-spin-button, .pk-n::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
   /* вертикальный экран: панель снизу */
   @media (max-aspect-ratio: 1/1) {
@@ -141,6 +158,7 @@
   <aside id="panel">
     <div class="tabs" role="tablist">
       <button class="tab" id="tabPoseBtn" role="tab" aria-selected="true" type="button">Поза</button>
+      <button class="tab" id="tabWalkBtn" role="tab" aria-selected="false" type="button">Ходьба</button>
       <button class="tab" id="tabLookBtn" role="tab" aria-selected="false" type="button">Внешность</button>
     </div>
     <div class="row">
@@ -185,6 +203,24 @@
       </div>
     </section>
 
+    <!-- вкладка: ходьба -->
+    <section id="tabWalk" hidden>
+      <div class="hint">Нажми на землю — персонаж пойдёт туда.</div>
+      <div class="row">
+        <button class="btn on" id="gWalk" type="button">Идти</button>
+        <button class="btn" id="gRun" type="button">Бежать</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="mapBtn" type="button">Карта сверху</button>
+        <button class="btn" id="stopBtn" type="button">Стоп</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="homeBtn" type="button">В начало</button>
+      </div>
+      <label class="opt"><input type="checkbox" id="focusEl">Только персонаж</label>
+      <div class="hint" id="spd">Стоит</div>
+    </section>
+
     <!-- вкладка: внешность -->
     <section id="tabLook" hidden>
       <div class="row">
@@ -192,7 +228,9 @@
         <button class="btn" id="reset" type="button">Сбросить вид</button>
       </div>
       <label class="opt"><input type="checkbox" id="fill" checked>Красить сплошным цветом</label>
+      <div class="hint">Нажми на цветной квадрат у части — откроется круг цвета.</div>
       <div id="parts"></div>
+      <div id="pickerHost" hidden></div>
     </section>
   </aside>
 
@@ -201,6 +239,9 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+import { createWorld, WORLD_RADIUS } from './world.js';
+import { createPicker } from './picker.js';
+import { createWalker } from './walk.js';
 
 const SAMPLE_URL = 'https://pixiv.github.io/three-vrm/packages/three-vrm/examples/models/VRM1_Constraint_Twist_Sample.vrm';
 const SAVE_KEY = 'anim-project-v1';
@@ -223,12 +264,16 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setClearColor(0x000000, 0);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
+const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 150);
 camera.position.set(0, 1, 3);
 
 const light = new THREE.DirectionalLight(0xffffff, Math.PI);
 light.position.set(1, 1.2, 1.5);
 scene.add(light);
+
+// земля, сетка, туман и метка «куда идти»
+const world = createWorld(scene);
+const baseFog = scene.fog;
 
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
@@ -246,7 +291,7 @@ function resize() {
 new ResizeObserver(resize).observe(stage);
 resize();
 
-/* ---------- состояние анимации ---------- */
+/* ---------- состояние ---------- */
 const JOINT_DEFS = [
   ['head', 'Голова'], ['neck', 'Шея'],
   ['upperChest', 'Верх груди'], ['chest', 'Грудь'], ['spine', 'Поясница'], ['hips', 'Таз'],
@@ -270,6 +315,17 @@ let playing = false;
 let playT = 0;
 let joints = [];      // [{ key, label, node }]
 let sel = 'head';
+
+let tab = 'pose';     // 'pose' | 'walk' | 'look'
+let mapView = false;
+let flipXZ = false;   // модели VRM0: повороты вперёд и в сторону зеркалятся
+let baseYaw = 0;      // поворот сцены модели после rotateVRM0
+let walkPose = null;
+let walkW = 0;
+let markerOn = false;
+let lastX = 0, lastZ = 0;
+
+const walker = createWalker();
 
 function loadSaved() {
   try {
@@ -321,6 +377,7 @@ function collectParts() {
         meshes: [],
         hidden: false,
         colored: false,
+        sw: null,
         origColor: main.color ? main.color.clone() : null,
         origShade: main.shadeColorFactor ? main.shadeColorFactor.clone() : null,
         origMap: main.map || null,
@@ -368,7 +425,36 @@ function restore(p) {
   setHidden(p, false);
 }
 
+/* ---------- свой выбор цвета ---------- */
+const pickerHost = $('pickerHost');
+let pickPart = null;
+
+const picker = createPicker(pickerHost, hex => {
+  if (!pickPart) return;
+  paint(pickPart, hex);
+  if (pickPart.sw) pickPart.sw.style.background = hex;
+});
+
+function closePicker() {
+  pickPart = null;
+  pickerHost.hidden = true;
+  $('tabLook').appendChild(pickerHost); // уводим из списка, чтобы он не стёрся
+  partsEl.querySelectorAll('.part.sel').forEach(r => r.classList.remove('sel'));
+}
+
+function openPicker(p, row) {
+  if (pickPart === p) { closePicker(); return; }
+  partsEl.querySelectorAll('.part.sel').forEach(r => r.classList.remove('sel'));
+  pickPart = p;
+  picker.set('#' + p.mat.color.getHexString());
+  row.classList.add('sel');
+  row.after(pickerHost);
+  pickerHost.hidden = false;
+  if (pickerHost.scrollIntoView) pickerHost.scrollIntoView({ block: 'nearest' });
+}
+
 function buildPanel() {
+  closePicker();
   partsEl.innerHTML = '';
   parts.forEach(p => {
     const row = document.createElement('div');
@@ -380,13 +466,16 @@ function buildPanel() {
     row.appendChild(name);
 
     if (p.mat.color) {
-      const input = document.createElement('input');
-      input.type = 'color';
-      input.value = '#' + p.mat.color.getHexString();
-      input.setAttribute('aria-label', 'Цвет: ' + p.name);
-      input.addEventListener('input', () => paint(p, input.value));
-      row.appendChild(input);
+      const sw = document.createElement('button');
+      sw.type = 'button';
+      sw.className = 'sw';
+      sw.style.background = '#' + p.mat.color.getHexString();
+      sw.setAttribute('aria-label', 'Цвет: ' + p.name);
+      sw.addEventListener('click', () => openPicker(p, row));
+      p.sw = sw;
+      row.appendChild(sw);
     } else {
+      p.sw = null;
       row.appendChild(document.createElement('span'));
     }
 
@@ -412,11 +501,24 @@ const _qb = new THREE.Quaternion();
 
 function quatOf(pose, key, out) {
   const a = pose[key] || [0, 0, 0];
-  return out.setFromEuler(_e.set(a[0], a[1], a[2]));
+  const f = flipXZ ? -1 : 1;
+  return out.setFromEuler(_e.set(a[0] * f, a[1], a[2] * f));
+}
+
+// поверх позы кадра накладывается походка (с весом 0..1)
+function overlayWalk(j, q) {
+  if (walkPose && walkW > 0.001 && walkPose[j.key]) {
+    quatOf(walkPose, j.key, _qb);
+    q.slerp(_qb, walkW);
+  }
 }
 
 function applyPose(pose) {
-  joints.forEach(j => j.node.quaternion.copy(quatOf(pose, j.key, _qa)));
+  joints.forEach(j => {
+    quatOf(pose, j.key, _qa);
+    overlayWalk(j, _qa);
+    j.node.quaternion.copy(_qa);
+  });
 }
 
 function applyBlend(poseA, poseB, t) {
@@ -424,7 +526,9 @@ function applyBlend(poseA, poseB, t) {
   joints.forEach(j => {
     quatOf(poseA, j.key, _qa);
     quatOf(poseB, j.key, _qb);
-    j.node.quaternion.copy(_qa.slerp(_qb, k));
+    _qa.slerp(_qb, k);
+    overlayWalk(j, _qa);
+    j.node.quaternion.copy(_qa);
   });
 }
 
@@ -547,7 +651,7 @@ function stopPlay() {
   playing = false;
   playBtn.textContent = 'Играть';
   playBtn.classList.remove('on');
-  markGroup.visible = true;
+  markGroup.visible = tab === 'pose';
   markFrame();
   syncSliders();
 }
@@ -607,17 +711,27 @@ function updateMarkers() {
   selMark.geo.attributes.position.needsUpdate = true;
 }
 
-/* нажатие по точке выбирает сустав */
-let down = null;
-canvas.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
-canvas.addEventListener('pointerup', e => {
-  if (!down || playing || $('tabPose').hidden) { down = null; return; }
-  const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
-  const quick = performance.now() - down.t < 400;
-  down = null;
-  if (moved > 8 || !quick) return;
-  const rect = canvas.getBoundingClientRect();
-  const px = e.clientX - rect.left, py = e.clientY - rect.top;
+/* ---------- нажатие по сцене ---------- */
+const ray = new THREE.Raycaster();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const _hit = new THREE.Vector3();
+const _ndc = new THREE.Vector2();
+
+// нажатие на землю: персонаж идёт в эту точку
+function groundTap(px, py, rect) {
+  _ndc.set((px / rect.width) * 2 - 1, -(py / rect.height) * 2 + 1);
+  ray.setFromCamera(_ndc, camera);
+  if (!ray.ray.intersectPlane(groundPlane, _hit)) return;
+  let x = _hit.x, z = _hit.z;
+  const r = Math.hypot(x, z);
+  if (r > WORLD_RADIUS) { x *= WORLD_RADIUS / r; z *= WORLD_RADIUS / r; }
+  walker.setTarget(x, z);
+  world.setTarget(x, z);
+  markerOn = true;
+}
+
+// нажатие по точке: выбирает сустав
+function jointTap(px, py, rect) {
   let best = null, bestD = 34;
   joints.forEach(j => {
     j.node.getWorldPosition(_v);
@@ -629,29 +743,87 @@ canvas.addEventListener('pointerup', e => {
     if (d < bestD) { bestD = d; best = j; }
   });
   if (best) selectJoint(best.key);
+}
+
+let down = null;
+let touches = 0;
+let multi = false; // был жест двумя пальцами — это не нажатие
+
+canvas.addEventListener('pointerdown', e => {
+  touches++;
+  if (touches > 1) { multi = true; down = null; return; }
+  down = { x: e.clientX, y: e.clientY, t: performance.now() };
+});
+function releasePointer() {
+  touches = Math.max(0, touches - 1);
+  if (touches === 0) multi = false;
+}
+canvas.addEventListener('pointercancel', () => { down = null; releasePointer(); });
+canvas.addEventListener('pointerup', e => {
+  const d = down;
+  const wasMulti = multi;
+  down = null;
+  releasePointer();
+  if (!d || wasMulti) return;
+  const moved = Math.hypot(e.clientX - d.x, e.clientY - d.y);
+  const quick = performance.now() - d.t < 400;
+  if (moved > 8 || !quick) return;
+  const rect = canvas.getBoundingClientRect();
+  const px = e.clientX - rect.left, py = e.clientY - rect.top;
+  if (tab === 'pose' && !playing) jointTap(px, py, rect);
+  else if (tab === 'walk') groundTap(px, py, rect);
 });
 
 /* ---------- камера ---------- */
+function applyFog() {
+  const focus = $('focusEl').checked;
+  scene.fog = (focus || mapView) ? null : baseFog;
+}
+
+function mapFlags(on) {
+  mapView = on;
+  $('mapBtn').classList.toggle('on', on);
+  controls.enableRotate = !on;
+  controls.maxDistance = on ? 60 : 8;
+  applyFog();
+}
+
+function setMap(on) {
+  mapFlags(on);
+  if (on) {
+    const x = walker.state.x, z = walker.state.z;
+    controls.target.set(x, 0, z);
+    camera.position.set(x, 18, z + 0.001);
+    controls.update();
+  } else {
+    frameFull();
+  }
+}
+
 function frameFull() {
   if (!vrm) return;
+  if (mapView) mapFlags(false);
   const box = new THREE.Box3().setFromObject(vrm.scene);
   const size = box.getSize(new THREE.Vector3());
   const c = box.getCenter(new THREE.Vector3());
   const fov = camera.fov * Math.PI / 180;
   const d = (size.y / 2) / Math.tan(fov / 2) * 1.25;
+  const fx = Math.sin(walker.state.yaw), fz = Math.cos(walker.state.yaw);
   controls.target.copy(c);
-  camera.position.set(c.x, c.y, c.z + d);
+  camera.position.set(c.x + fx * d, c.y, c.z + fz * d);
   controls.update();
 }
 
 function frameFace() {
   if (!vrm) return;
+  if (mapView) mapFlags(false);
   const head = vrm.humanoid.getNormalizedBoneNode('head');
   if (!head) return;
   const p = head.getWorldPosition(new THREE.Vector3());
   p.y += 0.06;
+  const fx = Math.sin(walker.state.yaw), fz = Math.cos(walker.state.yaw);
   controls.target.copy(p);
-  camera.position.set(p.x, p.y, p.z + 0.75);
+  camera.position.set(p.x + fx * 0.75, p.y, p.z + fz * 0.75);
   controls.update();
 }
 
@@ -668,11 +840,23 @@ async function loadModel(url) {
     }
     vrm = next;
     VRMUtils.rotateVRM0(vrm);
+    baseYaw = vrm.scene.rotation.y;
+    flipXZ = !!(vrm.meta && vrm.meta.metaVersion === '0');
     scene.add(vrm.scene);
+
+    walker.reset();
+    lastX = 0; lastZ = 0;
+    world.hideTarget(); markerOn = false;
+
     collectParts();
     buildPanel();
     rebuildJoints();
     vrm.update(0);
+
+    // рост персонажа нужен походке, чтобы шаг был по размеру ног
+    const box = new THREE.Box3().setFromObject(vrm.scene);
+    walker.setHeight(box.getSize(new THREE.Vector3()).y);
+
     frameFull();
     say('Готово. Частей: ' + parts.length + ', суставов: ' + joints.length);
   } catch (e) {
@@ -682,15 +866,34 @@ async function loadModel(url) {
 }
 
 /* ---------- вкладки и кнопки ---------- */
-function showTab(pose) {
-  $('tabPose').hidden = !pose;
-  $('tabLook').hidden = pose;
-  $('tabPoseBtn').setAttribute('aria-selected', String(pose));
-  $('tabLookBtn').setAttribute('aria-selected', String(!pose));
-  markGroup.visible = pose && !playing;
+const TABS = {
+  pose: ['tabPoseBtn', 'tabPose'],
+  walk: ['tabWalkBtn', 'tabWalk'],
+  look: ['tabLookBtn', 'tabLook']
+};
+
+function stopWalking() {
+  walker.clearTarget();
+  world.hideTarget();
+  markerOn = false;
 }
-$('tabPoseBtn').addEventListener('click', () => showTab(true));
-$('tabLookBtn').addEventListener('click', () => showTab(false));
+
+function showTab(name) {
+  if (playing && name !== 'pose') stopPlay();
+  if (tab === 'walk' && name !== 'walk') {
+    stopWalking();
+    if (mapView) setMap(false);
+  }
+  tab = name;
+  Object.entries(TABS).forEach(([k, ids]) => {
+    $(ids[1]).hidden = k !== name;
+    $(ids[0]).setAttribute('aria-selected', String(k === name));
+  });
+  markGroup.visible = name === 'pose' && !playing;
+}
+$('tabPoseBtn').addEventListener('click', () => showTab('pose'));
+$('tabWalkBtn').addEventListener('click', () => showTab('walk'));
+$('tabLookBtn').addEventListener('click', () => showTab('look'));
 
 $('camFull').addEventListener('click', frameFull);
 $('camFace').addEventListener('click', frameFace);
@@ -708,18 +911,63 @@ $('file').addEventListener('change', e => {
   e.target.value = '';
 });
 
+/* вкладка «Ходьба» */
+const gaitBtns = { walk: $('gWalk'), run: $('gRun') };
+function setGait(m) {
+  walker.setMode(m);
+  Object.entries(gaitBtns).forEach(([k, b]) => b.classList.toggle('on', k === m));
+}
+$('gWalk').addEventListener('click', () => setGait('walk'));
+$('gRun').addEventListener('click', () => setGait('run'));
+$('mapBtn').addEventListener('click', () => setMap(!mapView));
+$('stopBtn').addEventListener('click', stopWalking);
+$('homeBtn').addEventListener('click', () => {
+  walker.reset();
+  world.hideTarget();
+  markerOn = false;
+  say('Персонаж вернулся в начало');
+});
+$('focusEl').addEventListener('change', e => {
+  world.group.visible = !e.target.checked;
+  applyFog();
+});
+
 /* ---------- старт интерфейса ---------- */
 $('sd').value = dur;
 $('od').textContent = dur.toFixed(1);
 $('loopEl').checked = loop;
 buildFrames();
+setGait('walk');
 
 /* ---------- главный цикл ---------- */
 const clock = new THREE.Clock();
+const spdEl = $('spd');
+let spdText = '';
+
 renderer.setAnimationLoop(() => {
   const dt = clock.getDelta();
 
   if (vrm && joints.length) {
+    // походка и положение персонажа в мире
+    const w = walker.update(dt);
+    walkPose = w.pose;
+    walkW = w.weight;
+    vrm.scene.position.set(w.x, w.y, w.z);
+    vrm.scene.rotation.y = baseYaw + w.yaw;
+
+    // камера едет за персонажем
+    const dx = w.x - lastX, dz = w.z - lastZ;
+    if (dx || dz) {
+      camera.position.x += dx; camera.position.z += dz;
+      controls.target.x += dx; controls.target.z += dz;
+      lastX = w.x; lastZ = w.z;
+    }
+    if (markerOn && !walker.state.target) { world.hideTarget(); markerOn = false; }
+
+    const txt = w.speed > 0.05 ? 'Скорость: ' + w.speed.toFixed(1) + ' м/с' : 'Стоит';
+    if (txt !== spdText) { spdText = txt; spdEl.textContent = txt; }
+
+    // поза кадров / проигрывание анимации
     if (playing) {
       const n = frames.length;
       const segs = loop ? n : n - 1;
