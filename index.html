@@ -75,9 +75,9 @@
   .hint { font-size: 13px; opacity: .7; line-height: 1.3; }
 
   /* вкладки */
-  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
   .tab {
-    min-height: 38px; padding: 0 4px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+    min-height: 38px; padding: 0 2px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
     background: transparent; color: var(--paper);
     border: 2px solid var(--paper); border-radius: 4px;
   }
@@ -160,6 +160,7 @@
       <button class="tab" id="tabPoseBtn" role="tab" aria-selected="true" type="button">Поза</button>
       <button class="tab" id="tabWalkBtn" role="tab" aria-selected="false" type="button">Ходьба</button>
       <button class="tab" id="tabLookBtn" role="tab" aria-selected="false" type="button">Внешность</button>
+      <button class="tab" id="tabDrawBtn" role="tab" aria-selected="false" type="button">Рисунок</button>
     </div>
     <div class="row">
       <button class="btn" id="camFull" type="button">Весь рост</button>
@@ -226,12 +227,30 @@
       <div class="row">
         <label class="btn">Своя модель<input id="file" type="file" accept=".vrm,.glb" hidden></label>
         <button class="btn" id="reset" type="button">Сбросить вид</button>
+        <button class="btn" id="foxBtn" type="button">Проба: лиса</button>
       </div>
       <label class="opt"><input type="checkbox" id="fill" checked>Красить сплошным цветом</label>
       <div class="hint">Нажми на цветной квадрат у части — откроется круг цвета.</div>
       <div id="parts"></div>
       <div id="pickerHost" hidden></div>
     </section>
+    <section id="tabDraw" hidden>
+  <div class="row">
+    <button class="btn on" id="mPen" type="button">Карандаш</button>
+    <button class="btn" id="mJoint" type="button">Суставы</button>
+  </div>
+  <div class="hint">Карандаш: рисуй одним пальцем, двумя крути камеру. Суставы: нажми на форму, и сустав появится в списке во вкладке «Поза». Ставь суставы в нулевой позе.</div>
+  <div class="row" id="inkColors"></div>
+  <div class="ax"><span>Толщина</span><output id="orad">4 см</output>
+    <input id="srad" type="range" min="1" max="15" step="1" value="4"></div>
+  <div class="ax"><span>Глубина</span><output id="odep">0 см</output>
+    <input id="sdep" type="range" min="-100" max="100" step="5" value="0"></div>
+  <div class="row">
+    <button class="btn" id="undoInk" type="button">Отменить</button>
+    <button class="btn" id="clearInk" type="button">Очистить</button>
+    <button class="btn" id="rootInk" type="button">Новая цепочка</button>
+  </div>
+</section>
   </aside>
 
 <script type="module">
@@ -242,6 +261,8 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { createWorld, WORLD_RADIUS } from './world.js';
 import { createPicker } from './picker.js';
 import { createWalker } from './walk.js';
+  import { createSketch } from './draw.js';
+const FOX_URL = 'https://threejs.org/examples/models/gltf/Fox/glTF/Fox.gltf';
 
 const SAMPLE_URL = 'https://pixiv.github.io/three-vrm/packages/three-vrm/examples/models/VRM1_Constraint_Twist_Sample.vrm';
 const SAVE_KEY = 'anim-project-v1';
@@ -352,6 +373,16 @@ loader.register(parser => new VRMLoaderPlugin(parser));
 
 let vrm = null;
 let parts = [];
+
+  function makeGeneric(gltf) {
+  const bones = [];
+  gltf.scene.traverse(o => { if (o.isBone) bones.push(o); });
+  return {
+    generic: true, scene: gltf.scene, bones, meta: null,
+    humanoid: { getNormalizedBoneNode: () => null },
+    update() {}
+  };
+}
 
 function cleanName(raw) {
   return (raw || 'Часть')
@@ -517,7 +548,7 @@ function applyPose(pose) {
   joints.forEach(j => {
     quatOf(pose, j.key, _qa);
     overlayWalk(j, _qa);
-    j.node.quaternion.copy(_qa);
+    j.node.quaternion.copy(j.node.userData.rest).multiply(_qa);
   });
 }
 
@@ -528,16 +559,22 @@ function applyBlend(poseA, poseB, t) {
     quatOf(poseB, j.key, _qb);
     _qa.slerp(_qb, k);
     overlayWalk(j, _qa);
-    j.node.quaternion.copy(_qa);
+    j.node.quaternion.copy(j.node.userData.rest).multiply(_qa);
   });
 }
 
 function rebuildJoints() {
   joints = [];
-  JOINT_DEFS.forEach(([key, label]) => {
-    const node = vrm.humanoid.getNormalizedBoneNode(key);
-    if (node) joints.push({ key, label, node });
-  });
+  if (vrm.generic) {
+    vrm.bones.slice(0, 100).forEach((b, i) => joints.push({ key: 'b' + i, label: b.name || ('Кость ' + (i + 1)), node: b }));
+  } else {
+    JOINT_DEFS.forEach(([key, label]) => {
+      const node = vrm.humanoid.getNormalizedBoneNode(key);
+      if (node) joints.push({ key, label, node });
+    });
+  }
+  sketch.joints.forEach(j => joints.push(j));
+  joints.forEach(j => { if (!j.node.userData.rest) j.node.userData.rest = j.node.quaternion.clone(); });
   if (!joints.find(j => j.key === sel)) sel = joints.length ? joints[0].key : null;
   const selEl = $('jointSel');
   selEl.innerHTML = '';
@@ -547,7 +584,7 @@ function rebuildJoints() {
     selEl.appendChild(o);
   });
   selEl.value = sel;
-  markGeo.setDrawRange(0, joints.length);
+  markGeo.setDrawRange(0, Math.min(joints.length, 128));
   syncSliders();
 }
 
@@ -693,7 +730,7 @@ function makePoints(count, size, color) {
   markGroup.add(pts);
   return { geo, pts };
 }
-const allMarks = makePoints(32, 14, 0x27e0d0);
+const allMarks = makePoints(128, 14, 0x27e0d0);
 const selMark = makePoints(1, 24, 0xff2e88);
 const markGeo = allMarks.geo;
 selMark.pts.renderOrder = 1000;
@@ -742,9 +779,37 @@ function jointTap(px, py, rect) {
     const d = Math.hypot(sx - px, sy - py);
     if (d < bestD) { bestD = d; best = j; }
   });
-  if (best) selectJoint(best.key);
+ if (best) { selectJoint(best.key); return true; }
+return false;
 }
 
+const sketch = createSketch({
+  scene, camera, canvas, controls,
+  getSelectedKey: () => sel,
+  selectAt: (px, py, rect) => jointTap(px, py, rect),
+  onJoint: j => { rebuildJoints(); selectJoint(j.key); say('Сустав: ' + j.label); }
+});
+function setInk(m) {
+  sketch.setMode(m);
+  $('mPen').classList.toggle('on', m === 'pen');
+  $('mJoint').classList.toggle('on', m === 'joint');
+}
+$('mPen').addEventListener('click', () => setInk('pen'));
+$('mJoint').addEventListener('click', () => setInk('joint'));
+$('srad').addEventListener('input', e => { sketch.state.radius = e.target.value / 100; $('orad').textContent = e.target.value + ' см'; });
+$('sdep').addEventListener('input', e => { sketch.state.depth = e.target.value / 100; $('odep').textContent = e.target.value + ' см'; });
+$('undoInk').addEventListener('click', () => sketch.undo());
+$('clearInk').addEventListener('click', () => { sketch.clear(); rebuildJoints(); });
+$('rootInk').addEventListener('click', () => { sketch.newChain(); say('Следующий сустав начнёт новую цепочку'); });
+['#ff2e88', '#27e0d0', '#f5c518', '#ece9f5', '#8a5cff', '#ff7a29'].forEach(c => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'sw'; b.style.background = c;
+  b.setAttribute('aria-label', 'Цвет ' + c);
+  b.addEventListener('click', () => { sketch.state.color = c; });
+  $('inkColors').appendChild(b);
+});
+$('foxBtn').addEventListener('click', () => loadModel(FOX_URL));
+  
 let down = null;
 let touches = 0;
 let multi = false; // был жест двумя пальцами — это не нажатие
@@ -832,17 +897,24 @@ async function loadModel(url) {
   say('Загружаю модель…');
   try {
     const gltf = await loader.loadAsync(url);
-    const next = gltf.userData.vrm;
-    if (!next) throw new Error('В файле нет VRM-данных');
+    const next = gltf.userData.vrm || makeGeneric(gltf);
+if (next.generic && !next.bones.length) throw new Error('В файле нет скелета');
     if (vrm) {
       scene.remove(vrm.scene);
       VRMUtils.deepDispose(vrm.scene);
     }
     vrm = next;
-    VRMUtils.rotateVRM0(vrm);
+    if (!vrm.generic) VRMUtils.rotateVRM0(vrm);
     baseYaw = vrm.scene.rotation.y;
     flipXZ = !!(vrm.meta && vrm.meta.metaVersion === '0');
     scene.add(vrm.scene);
+    vrm.offY = 0;
+if (vrm.generic) {
+  const b = new THREE.Box3().setFromObject(vrm.scene);
+  const h = b.getSize(new THREE.Vector3()).y;
+  if (h > 0) vrm.scene.scale.setScalar(0.7 / h);
+  vrm.offY = -new THREE.Box3().setFromObject(vrm.scene).min.y;
+}
 
     walker.reset();
     lastX = 0; lastZ = 0;
@@ -869,9 +941,10 @@ async function loadModel(url) {
 const TABS = {
   pose: ['tabPoseBtn', 'tabPose'],
   walk: ['tabWalkBtn', 'tabWalk'],
-  look: ['tabLookBtn', 'tabLook']
+  look: ['tabLookBtn', 'tabLook'],
+  draw: ['tabDrawBtn', 'tabDraw']
 };
-
+  
 function stopWalking() {
   walker.clearTarget();
   world.hideTarget();
@@ -889,11 +962,13 @@ function showTab(name) {
     $(ids[1]).hidden = k !== name;
     $(ids[0]).setAttribute('aria-selected', String(k === name));
   });
-  markGroup.visible = name === 'pose' && !playing;
+  markGroup.visible = (name === 'pose' || name === 'draw') && !playing;
+sketch.setActive(name === 'draw');
 }
 $('tabPoseBtn').addEventListener('click', () => showTab('pose'));
 $('tabWalkBtn').addEventListener('click', () => showTab('walk'));
 $('tabLookBtn').addEventListener('click', () => showTab('look'));
+  $('tabDrawBtn').addEventListener('click', () => showTab('draw'));
 
 $('camFull').addEventListener('click', frameFull);
 $('camFace').addEventListener('click', frameFace);
@@ -952,7 +1027,7 @@ renderer.setAnimationLoop(() => {
     const w = walker.update(dt);
     walkPose = w.pose;
     walkW = w.weight;
-    vrm.scene.position.set(w.x, w.y, w.z);
+    vrm.scene.position.set(w.x, w.y + (vrm.offY || 0), w.z);
     vrm.scene.rotation.y = baseYaw + w.yaw;
 
     // камера едет за персонажем
