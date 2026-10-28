@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Игры</title>
+<style>
+  html, body { margin: 0; background: #0e0f18; color: #e8eaf8; font-family: system-ui, -apple-system, Roboto, sans-serif; }
+  html.game, html.game body { height: 100%; overflow: hidden; touch-action: none; overscroll-behavior: none; }
+  html.game canvas { position: absolute; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  #msg { position: fixed; left: 0; right: 0; top: 40%; text-align: center; color: #aab0d0; font-size: 18px; padding: 0 16px; }
+  #gal { max-width: 760px; margin: 0 auto; padding: 14px 14px 40px; }
+  #gal header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+  #gal h1 { font-size: 22px; margin: 0; }
+  .btn { display: inline-block; background: #2f8f5b; color: #fff; text-decoration: none; border: 0; border-radius: 10px; padding: 10px 14px; font-size: 15px; font-weight: 700; }
+  .btn.alt { background: #3a3f6b; }
+  .card { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #1a1c2e; border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
+  .card .t { font-size: 17px; font-weight: 700; word-break: break-word; }
+  .card .a { font-size: 13px; color: #8a90b0; margin-top: 2px; }
+  #note { color: #aab0d0; font-size: 15px; padding: 10px 2px; }
+</style>
+<script>
+  // Показывает ошибки прямо на экране (на планшете нет devtools)
+  window.__showErr = function (m) {
+    var d = document.getElementById('err');
+    if (!d) {
+      d = document.createElement('div');
+      d.id = 'err';
+      d.style.cssText = 'position:fixed;left:0;right:0;bottom:0;max-height:40%;overflow:auto;background:#7a1020;color:#fff;font:12px/1.4 monospace;padding:6px 8px;z-index:9;white-space:pre-wrap';
+      (document.body || document.documentElement).appendChild(d);
+    }
+    d.textContent += m + '\n';
+  };
+  window.addEventListener('error', function (e) {
+    __showErr('Ошибка: ' + e.message + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : ''));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    __showErr('Promise: ' + ((e.reason && e.reason.message) || e.reason));
+  });
+</script>
+</head>
+<body>
+<script src="config.js"></script>
+<script src="engine.js"></script>
+<script src="runtime.js"></script>
+<script>
+(function () {
+  var cfg = window.MK_CONFIG || {};
+  var q = new URLSearchParams(location.search);
+  var cloud = !!(cfg.supabaseUrl && cfg.supabaseKey);
+
+  function api(path) {
+    return fetch(cfg.supabaseUrl.replace(/\/$/, '') + '/rest/v1/' + path, {
+      headers: { apikey: cfg.supabaseKey, Authorization: 'Bearer ' + cfg.supabaseKey }
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  function message(text) {
+    var d = document.getElementById('msg');
+    if (!d) {
+      d = document.createElement('div');
+      d.id = 'msg';
+      document.body.appendChild(d);
+    }
+    d.textContent = text;
+  }
+  function clearMessage() {
+    var d = document.getElementById('msg');
+    if (d) d.remove();
+  }
+
+  function runGame(game, opts) {
+    document.documentElement.className = 'game';
+    clearMessage();
+    MiniRuntime.start(game, opts);
+  }
+
+  /* ---- Тест из редактора ---- */
+  function testMode() {
+    document.documentElement.className = 'game';
+    var data = null;
+    try { data = JSON.parse(localStorage.getItem('mk_test_game')); } catch (e) { data = null; }
+    if (!data || !data.game) { message('Нет игры для теста. Вернись в редактор.'); return; }
+    runGame(data.game, {
+      id: 'test',
+      unlockAll: true,
+      startLevel: typeof data.level === 'number' ? data.level : 0,
+      exitLabel: '← Редактор',
+      onExit: function () { parent.postMessage({ type: 'mk-exit' }, location.origin); }
+    });
+  }
+
+  /* ---- Игра по ссылке ---- */
+  function idMode(id) {
+    document.documentElement.className = 'game';
+    if (!/^[0-9a-fA-F-]{36}$/.test(id)) { message('Неверная ссылка на игру.'); return; }
+    if (!cloud) { message('Облако не подключено (config.js).'); return; }
+    message('Загрузка игры…');
+    api('games?id=eq.' + id + '&select=data').then(function (rows) {
+      if (!rows.length) { message('Игра не найдена.'); return; }
+      var embedded = window.self !== window.top;
+      runGame(rows[0].data, {
+        id: id,
+        exitLabel: '← Игры',
+        onExit: embedded ? null : function () { location.href = 'play.html'; }
+      });
+    }).catch(function (e) {
+      message('Не удалось загрузить игру: ' + e.message);
+    });
+  }
+
+  /* ---- Список игр ---- */
+  function galleryMode() {
+    var root = document.createElement('div');
+    root.id = 'gal';
+    var head = document.createElement('header');
+    var h = document.createElement('h1');
+    h.textContent = 'Игры';
+    var make = document.createElement('a');
+    make.className = 'btn alt';
+    make.href = 'editor.html';
+    make.textContent = 'Создать свою игру';
+    head.appendChild(h);
+    head.appendChild(make);
+    root.appendChild(head);
+    var note = document.createElement('div');
+    note.id = 'note';
+    root.appendChild(note);
+    var list = document.createElement('div');
+    root.appendChild(list);
+    document.body.appendChild(root);
+
+    if (!cloud) { note.textContent = 'Облако не подключено: впиши ключи в config.js.'; return; }
+    note.textContent = 'Загрузка…';
+    api('games?approved=eq.true&select=id,title,author&order=created_at.desc&limit=60').then(function (rows) {
+      note.textContent = rows.length ? '' : 'Пока нет опубликованных игр. Стань первым!';
+      rows.forEach(function (g) {
+        var card = document.createElement('div');
+        card.className = 'card';
+        var left = document.createElement('div');
+        var t = document.createElement('div');
+        t.className = 't';
+        t.textContent = g.title || 'Без названия';
+        left.appendChild(t);
+        if (g.author) {
+          var a = document.createElement('div');
+          a.className = 'a';
+          a.textContent = 'автор: ' + g.author;
+          left.appendChild(a);
+        }
+        var play = document.createElement('a');
+        play.className = 'btn';
+        play.href = 'play.html?id=' + encodeURIComponent(g.id);
+        play.textContent = 'Играть';
+        card.appendChild(left);
+        card.appendChild(play);
+        list.appendChild(card);
+      });
+    }).catch(function (e) {
+      note.textContent = 'Не удалось загрузить список: ' + e.message;
+    });
+  }
+
+  if (location.hash === '#test') testMode();
+  else if (q.get('id')) idMode(q.get('id'));
+  else galleryMode();
+})();
+</script>
+</body>
+</html>
