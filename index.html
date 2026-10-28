@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Мини-движок · демо</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0e0f18; overflow: hidden; touch-action: none; overscroll-behavior: none; }
+  canvas { position: absolute; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+</style>
+<script>
+  // Показывает ошибки прямо на экране (на планшете нет devtools)
+  window.__showErr = function (m) {
+    var d = document.getElementById('err');
+    if (!d) {
+      d = document.createElement('div');
+      d.id = 'err';
+      d.style.cssText = 'position:fixed;left:0;right:0;bottom:0;max-height:40%;overflow:auto;background:#7a1020;color:#fff;font:12px/1.4 monospace;padding:6px 8px;z-index:9;white-space:pre-wrap';
+      (document.body || document.documentElement).appendChild(d);
+    }
+    d.textContent += m + '\n';
+  };
+  window.addEventListener('error', function (e) {
+    __showErr('Ошибка: ' + e.message + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : ''));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    __showErr('Promise: ' + ((e.reason && e.reason.message) || e.reason));
+  });
+</script>
+</head>
+<body>
+<script src="engine.js"></script>
+<script>
+(function () {
+  var M = MiniEngine;
+  var Scene = M.Scene, UIButton = M.UIButton, UILabel = M.UILabel;
+  var MenuScene = M.MenuScene, LevelSelectScene = M.LevelSelectScene;
+  var loadTilemap = M.loadTilemap;
+
+  /* ============ 1. Движок и сохранения ============ */
+  var engine = new M.Engine({
+    width: 800,
+    height: 450,
+    background: '#171826',
+    save: {
+      namespace: 'demo-platformer',
+      // Облако (по желанию): впиши адрес проекта и anon-ключ из Supabase
+      supabaseUrl: '',
+      supabaseKey: '',
+      table: 'game_saves'
+    }
+  });
+
+  /* ============ 2. Уровни ============
+     #  стена     @  старт     o  монета     ^  шипы
+     m  враг      E  выход     .  пусто
+  */
+  var d = function (n) { return '.'.repeat(n); };
+  var w = function (n) { return '#'.repeat(n); };
+
+  var L1 = [
+    '', '', '', '', '', '', '', '', '',
+    d(15) + 'oo' + d(8) + 'ooo',
+    d(14) + w(4) + d(7) + w(5),
+    '',
+    '..@' + d(6) + 'ooo' + d(10) + '^^' + d(6) + 'm' + d(6) + 'E',
+    w(44)
+  ];
+
+  var L2 = [
+    '', '', '', '', '', '', '', '', '',
+    d(26) + 'oo',
+    d(12) + 'o.o' + d(11) + '##',
+    '',
+    '..@' + d(7) + 'oo' + d(6) + '^^' + d(16) + 'm' + d(8) + 'E',
+    w(12) + d(3) + w(10) + d(4) + w(18)
+  ];
+
+  var L3 = [
+    '', '', '',
+    d(34) + 'E',
+    d(30) + w(6),
+    d(23) + 'ooo',
+    d(22) + w(5),
+    d(15) + 'oo',
+    d(14) + w(5),
+    d(9) + 'oo',
+    d(8) + w(4),
+    '',
+    '..@' + d(4) + 'o' + d(12) + 'm' + d(10) + '^^^' + d(12) + 'm',
+    w(50)
+  ];
+
+  function coins(map) { return map.join('').split('o').length - 1; }
+
+  engine.levels.define([
+    { name: '1. Первые шаги', map: L1, total: coins(L1) },
+    { name: '2. Через пропасти', map: L2, total: coins(L2) },
+    { name: '3. Вверх по лестнице', map: L3, total: coins(L3) }
+  ]);
+
+  /* ============ 3. Меню ============ */
+  var resetUntil = 0;
+
+  engine.addScene('menu', new MenuScene({
+    title: 'Мини-движок',
+    subtitle: 'демо-платформер',
+    hint: function () {
+      return engine.input.coarse
+        ? 'Слева — джойстик, справа кнопка A — прыжок'
+        : 'Стрелки или WASD — движение, пробел — прыжок';
+    },
+    buttons: [
+      { text: 'Играть', color: '#2f8f5b', onTap: function (e) { e.go('levels'); } },
+      {
+        text: function () { return 'Прогресс: ' + engine.save.status; },
+        color: '#3a3f6b',
+        onTap: function (e) { if (e.save.cloud) e.save.sync(); }
+      },
+      {
+        text: function () { return performance.now() < resetUntil ? 'Точно сбросить? Нажми ещё раз' : 'Сбросить прогресс'; },
+        color: '#6b3a4a',
+        size: 19,
+        onTap: function (e) {
+          if (performance.now() < resetUntil) { e.save.reset(); resetUntil = 0; }
+          else resetUntil = performance.now() + 3000;
+        }
+      }
+    ]
+  }));
+
+  /* ============ 4. Выбор уровня ============ */
+  engine.addScene('levels', new LevelSelectScene({ title: 'Выбор уровня', back: 'menu' }));
+
+  /* ============ 5. Игровая сцена ============ */
+  class GameScene extends Scene {
+    enter(p) {
+      var E = this.engine;
+      var scene = this;
+      var TS = 32;
+      this.idx = p.level || 0;
+      this.lv = E.levels.list[this.idx];
+      this.controls = { stick: true, buttons: ['A'] };
+      this.coins = 0;
+      this.total = 0;
+      this.t = 0;
+      this.state = 'play';
+      this.spawn = { x: 64, y: 300 };
+
+      var legend = {
+        '#': function (x, y, ww, hh) {
+          scene.world.add({
+            x: x, y: y, w: ww, h: hh, solid: true, static: true, tags: ['wall'],
+            draw: function (ctx) {
+              ctx.fillStyle = '#3a3f6b';
+              ctx.fillRect(this.x, this.y, this.w, this.h);
+              ctx.fillStyle = 'rgba(255,255,255,0.10)';
+              ctx.fillRect(this.x, this.y, this.w, 4);
+            }
+          });
+        },
+        '@': function (x, y) { scene.spawn = { x: x + 4, y: y + 2 }; },
+        'o': function (x, y) {
+          scene.total++;
+          scene.world.add({ x: x + 8, y: y + 8, w: 16, h: 16, shape: 'circle', color: '#ffd23f', static: true, tags: ['coin'], z: 1 });
+        },
+        '^': function (x, y) {
+          scene.world.add({
+            x: x + 3, y: y + 14, w: 26, h: 18, static: true, tags: ['hazard'], z: 1,
+            draw: function (ctx) {
+              ctx.fillStyle = '#d9dbe8';
+              ctx.beginPath();
+              ctx.moveTo(this.x, this.y + this.h);
+              ctx.lineTo(this.x + this.w / 2, this.y);
+              ctx.lineTo(this.x + this.w, this.y + this.h);
+              ctx.closePath();
+              ctx.fill();
+            }
+          });
+        },
+        'E': function (x, y) {
+          scene.world.add({
+            x: x, y: y - 32, w: 32, h: 64, static: true, tags: ['exit'], z: 1,
+            draw: function (ctx) {
+              ctx.fillStyle = '#2f8f5b';
+              ctx.fillRect(this.x, this.y, this.w, this.h);
+              ctx.fillStyle = '#8df0b5';
+              ctx.fillRect(this.x + 5, this.y + 6, this.w - 10, this.h - 6);
+              ctx.fillStyle = '#ffe27a';
+              ctx.fillRect(this.x + this.w - 11, this.y + 34, 4, 4);
+            }
+          });
+        },
+        'm': function (x, y) {
+          scene.world.add({
+            x: x + 2, y: y + 4, w: 28, h: 28, vx: -60, gravity: 1500, maxFall: 800,
+            collides: true, bounceX: 1, tags: ['enemy'], z: 2,
+            update: function (dt, world) {
+              if (this.blocked.d) {
+                var fx = this.vx > 0 ? this.x + this.w + 2 : this.x - 2;
+                if (!world.solidAt(fx, this.y + this.h + 4)) this.vx = -this.vx;
+              }
+              if (this.y > scene.mapH + 200) this.dead = true;
+            },
+            draw: function (ctx) {
+              ctx.fillStyle = '#e5484d';
+              M.util.rrect(ctx, this.x, this.y, this.w, this.h, 8);
+              ctx.fill();
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(this.x + 6, this.y + 8, 6, 7);
+              ctx.fillRect(this.x + 16, this.y + 8, 6, 7);
+              ctx.fillStyle = '#10131f';
+              ctx.fillRect(this.x + 8, this.y + 10, 3, 4);
+              ctx.fillRect(this.x + 18, this.y + 10, 3, 4);
+            }
+          });
+        }
+      };
+
+      var info = loadTilemap(this.world, this.lv.map, TS, legend);
+      this.mapW = info.width;
+      this.mapH = info.height;
+
+      this.player = this.world.add({
+        x: this.spawn.x, y: this.spawn.y, w: 24, h: 30,
+        gravity: 1500, maxFall: 800, collides: true, tags: ['player'], z: 5,
+        coyote: 0, jumpBuf: 0, face: 1,
+        update: function (dt) {
+          var inp = E.input;
+          this.vx = inp.axisX * 230;
+          if (this.vx > 5) this.face = 1;
+          else if (this.vx < -5) this.face = -1;
+          this.coyote = this.blocked.d ? 0.1 : this.coyote - dt;
+          if (inp.pressed('A') || inp.pressed('up')) this.jumpBuf = 0.12;
+          this.jumpBuf -= dt;
+          if (this.jumpBuf > 0 && this.coyote > 0) {
+            this.vy = -640;
+            this.coyote = 0;
+            this.jumpBuf = 0;
+            E.audio.play('jump');
+          }
+          if (this.y > scene.mapH + 120) scene.die();
+        },
+        onTouch: function (o) {
+          if (o.hasTag('coin')) {
+            o.dead = true;
+            scene.coins++;
+            E.audio.play('coin');
+            scene.world.burst(o.cx, o.cy, '#ffd23f', 8, 140);
+          } else if (o.hasTag('hazard')) {
+            scene.die();
+          } else if (o.hasTag('enemy')) {
+            if (this.vy > 0 && this.y + this.h - o.y < 18) {
+              o.dead = true;
+              this.vy = -420;
+              E.audio.play('hit');
+              scene.world.burst(o.cx, o.cy, '#e5484d', 12, 200);
+            } else {
+              scene.die();
+            }
+          } else if (o.hasTag('exit')) {
+            scene.win();
+          }
+        },
+        draw: function (ctx) {
+          ctx.fillStyle = '#7ad7ff';
+          M.util.rrect(ctx, this.x, this.y, this.w, this.h, 7);
+          ctx.fill();
+          ctx.fillStyle = '#10131f';
+          ctx.fillRect(this.x + (this.face > 0 ? 14 : 5), this.y + 8, 5, 7);
+        }
+      });
+
+      this.camera.bounds = { x: 0, y: 0, w: this.mapW, h: this.mapH };
+      this.camera.follow(this.player, 6);
+
+      this.addUI(new UIButton({
+        x: E.W - 126, y: 6, w: 120, h: 34, size: 15, text: '☰ Уровни', color: '#3a3f6b',
+        onTap: function (e) { e.go('levels'); }
+      }));
+    }
+
+    die() {
+      if (this.state !== 'play') return;
+      this.state = 'dead';
+      var p = this.player;
+      this.engine.audio.play('hit');
+      this.world.burst(p.cx, p.cy, '#7ad7ff', 18, 240);
+      this.camera.shake(8, 0.3);
+      p.visible = false;
+      p.active = false;
+      var self = this;
+      this.after(0.8, function () { self.engine.go('game', { level: self.idx }); });
+    }
+
+    win() {
+      if (this.state !== 'play') return;
+      this.state = 'win';
+      var E = this.engine;
+      var self = this;
+      var cx = E.W / 2;
+      var H = E.H;
+      this.controls = false;
+      this.player.active = false;
+      var t = Math.round(this.t * 10) / 10;
+      var next = E.levels.complete(this.idx, { score: this.coins, time: t });
+      E.audio.play('win');
+      this.world.burst(this.player.cx, this.player.cy, '#ffe27a', 24, 260);
+
+      this.addUI(new UILabel({ x: cx, y: H * 0.26, text: 'Уровень пройден!', size: 38, bold: true, color: '#ffe27a' }));
+      this.addUI(new UILabel({ x: cx, y: H * 0.26 + 46, text: 'Монеты: ' + this.coins + '/' + this.total + '   Время: ' + t + ' с', size: 20 }));
+      var y = H * 0.5;
+      if (next >= 0) {
+        this.addUI(new UIButton({
+          x: cx - 140, y: y, w: 280, h: 54, text: 'Дальше', color: '#2f8f5b',
+          onTap: function (e) { e.levels.start(next); }
+        }));
+        y += 68;
+      } else {
+        this.addUI(new UILabel({ x: cx, y: y + 20, text: 'Это был последний уровень!', size: 20, color: '#8df0b5' }));
+        y += 68;
+      }
+      this.addUI(new UIButton({
+        x: cx - 140, y: y, w: 280, h: 54, text: 'Заново',
+        onTap: function (e) { e.go('game', { level: self.idx }); }
+      }));
+      y += 68;
+      this.addUI(new UIButton({
+        x: cx - 140, y: y, w: 280, h: 54, text: 'К уровням', color: '#3a3f6b',
+        onTap: function (e) { e.go('levels'); }
+      }));
+    }
+
+    update(dt) {
+      if (this.state === 'play') this.t += dt;
+    }
+
+    drawBack(ctx) {
+      var W = this.engine.W;
+      var H = this.engine.H;
+      var g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, '#1d2040');
+      g.addColorStop(1, '#3a2e5c');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      for (var i = 0; i < 8; i++) {
+        var span = W + 200;
+        var x = (((i * 230 - this.camera.x * 0.3) % span) + span) % span - 100;
+        ctx.beginPath();
+        ctx.arc(x, 330 + (i % 3) * 20, 90 + (i % 4) * 20, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    draw(ctx) {
+      var E = this.engine;
+      E.text(ctx, 'Монеты ' + this.coins + '/' + this.total, 14, 22, { size: 20, bold: true });
+      E.text(ctx, this.lv.name, E.W / 2 - 20, 22, { size: 16, align: 'center', color: '#bbc0e0' });
+      E.text(ctx, this.t.toFixed(1) + ' с', E.W - 136, 22, { size: 16, align: 'right', color: '#bbc0e0' });
+      if (this.state === 'win') {
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(0, 0, E.W, E.H);
+      }
+    }
+  }
+
+  engine.addScene('game', new GameScene());
+
+  /* ============ 6. Поехали ============ */
+  if (engine.save.cloud) engine.save.pull();
+  engine.start('menu');
+})();
+</script>
+</body>
+</html>
