@@ -23,7 +23,8 @@ h1,h2,h3{font-family:Unbounded,system-ui,sans-serif;margin:0}
 .hc svg{width:54px;height:54px}
 .hc b{font:700 18px Unbounded,system-ui}
 .hc span{font-size:13px;font-weight:600;opacity:.8}
-.hc.c1{background:#5ef2c1}.hc.c2{background:#ffd36b}.hc.c3{background:#7cc4ff}.hc.c4{background:#ff9fc0}
+.hc.c1{background:#5ef2c1}.hc.c2{background:#ffd36b}.hc.c3{background:#7cc4ff}.hc.c4{background:#ff9fc0}.hc.c5{background:#b79cff;grid-column:1/3;min-height:120px}
+body.playing #top,body.playing #tools,body.playing #selbar,body.playing #hud,body.playing #dock{display:none}
 .fine{margin-top:22px;color:var(--mut);font-size:13px;max-width:44ch}
 .fine button{background:none;color:var(--ac);padding:0;text-decoration:underline}
 /* EDITOR */
@@ -88,6 +89,7 @@ h1,h2,h3{font-family:Unbounded,system-ui,sans-serif;margin:0}
     <button class="hc c2" data-m="item"><svg viewBox="0 0 64 64" fill="none" stroke="#14102c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M44 8l12 12-26 26-12-12zM14 38l-6 14 14-6M34 42l6 6"/></svg><b>Предмет</b><span>Предметы из библиотеки, фигур и кисти</span></button>
     <button class="hc c3" data-m="loc"><svg viewBox="0 0 64 64" fill="none" stroke="#14102c" stroke-width="4" stroke-linejoin="round"><path d="M8 58V28h14v30M22 58V12h20v46M42 58V34h14v24M28 22h8M28 32h8M28 42h8"/></svg><b>Локация</b><span>Город, транспорт, трубы, облака, природа</span></button>
     <button class="hc c4" data-m="anim"><svg viewBox="0 0 64 64" fill="none" stroke="#14102c" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"><rect x="6" y="12" width="52" height="40" rx="8"/><path d="M27 23l12 9-12 9z"/><path d="M14 58h36"/></svg><b>Анимация</b><span>Кадры, ходьба, готовые движения</span></button>
+    <button class="hc c5" data-m="play"><svg viewBox="0 0 64 64" fill="none" stroke="#14102c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 40h44l-4 12H14zM18 40V28a14 14 0 0128 0v12M26 30h.1M38 30h.1"/></svg><b>Игра</b><span>Герой, монеты, враги, финиш. Играй и сохраняй готовую игру</span></button>
   </div>
   <p class="fine">Готовое можно выгрузить в игру файлом .glb.<br><button id="resetg">Показать подсказки заново</button></p>
 </div>
@@ -114,6 +116,7 @@ h1,h2,h3{font-family:Unbounded,system-ui,sans-serif;margin:0}
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/exporters/GLTFExporter.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/utils/BufferGeometryUtils.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/utils/SkeletonUtils.js"></script>
+<script src="engine.js" onerror="window.QWEngine=null"></script>
 <script src="models.js" onerror="window.QW_MODELS=[]"></script>
 <script>
 (()=>{'use strict';
@@ -127,8 +130,9 @@ const MODES={
  char:{t:'Персонаж',s:'Перс.',tabs:['lib','color','brush','shape','layers','light','game'],cat:'chars'},
  item:{t:'Предмет',s:'Предм.',tabs:['shape','brush','color','layers','lib','light','game'],cat:'props'},
  loc:{t:'Локация',s:'Лок.',tabs:['lib','shape','color','layers','light','brush','game'],cat:'city'},
+ play:{t:'Игра',s:'Игра',tabs:['play','lib','layers','light','game'],cat:'chars'},
  anim:{t:'Анимация',s:'Аним.',tabs:['anim','lib','layers','light','game'],cat:'chars'}};
-const TABS={lib:['📦','Библиотека'],shape:['🔷','Фигуры'],brush:['🖌','Кисть'],color:['🎨','Цвет'],layers:['🗂','Слои'],light:['💡','Свет'],game:['🎮','Игра'],anim:['🎞','Кадры']};
+const TABS={lib:['📦','Библиотека'],shape:['🔷','Фигуры'],brush:['🖌','Кисть'],color:['🎨','Цвет'],layers:['🗂','Слои'],light:['💡','Свет'],game:['📊','Сцена'],play:['🎮','Движок'],anim:['🎞','Кадры']};
 const PRE=[
  {n:'Студия',bg:'#2b2552',sky:'#ffffff',gr:'#7f77b5',sun:'#fff6e0',int:1.3,hemi:.8,az:40,el:55,gc:'#3a3370'},
  {n:'День',bg:'#8fd1ff',sky:'#ffffff',gr:'#8a9a6a',sun:'#fff2d6',int:1.7,hemi:.7,az:60,el:60,gc:'#6fae5a'},
@@ -199,7 +203,7 @@ function bush(){const g=new T.Group();[[0,.25,0,.3],[.3,.2,.1,.24],[-.28,.2,0,.2
 function rock(){const m=part(new T.DodecahedronGeometry(.5,0),0x8a89a0,0,.3,0,'камень');m.scale.set(1,.7,.9);m.material.flatShading=true;const g=new T.Group();g.add(m);return g}
 function mountain(){const g=new T.Group();const m=part(new T.ConeGeometry(3,4,6),0x6f6a8c,0,2,0,'гора');m.material.flatShading=true;g.add(m);const s=part(new T.ConeGeometry(1,1.33,6),0xffffff,0,3.35,0,'снег');g.add(s);return g}
 
-let bad=new Set();
+let bad=new Set();const WALLS=new Set(['panel','office','sky','house','pipe','elbow','fence','tree','pine','rock','mount']);
 const PROC=[
  {k:'panel',c:'city',n:'Панелька',e:'🏢',b:()=>tower(2.2,5.5,1.5,0xd8d2f0),l:'блок'},{k:'office',c:'city',n:'Офис',e:'🏬',b:()=>tower(1.8,10,1.8,0xa6dff2),l:'блок'},
  {k:'sky',c:'city',n:'Небоскрёб',e:'🌆',b:()=>tower(1.6,17,1.6,0xa9b6ee,true),l:'блок'},{k:'house',c:'city',n:'Дом',e:'🏠',b:house,l:'блок'},
@@ -230,7 +234,7 @@ function addItem(obj,name,silent){obj.userData.isItem=true;obj.userData.name=nam
 function removeItem(o,quiet){const i=items.indexOf(o);if(i<0)return;if(sel&&(sel===o||o.getObjectById(sel.id)))select(null);items.splice(i,1);scene.remove(o);mixers.delete(o);
  const k=strokes.indexOf(o);if(k>=0)strokes.splice(k,1);if(!quiet)push(()=>{scene.add(o);items.push(o);if(o.userData.stroke)strokes.push(o);renderAll()});renderAll()}
 function rootOf(o){while(o&&!o.userData.isItem)o=o.parent;return o}
-function addFromLib(k){const d=LIB.find(x=>x.k===k);if(!d)return;if(d.b){addItem(d.b(),d.n);if(st.mode==='char'||st.mode==='anim')setJoints(true)}else loadGLB(d.u,d.n,d.s)}
+function addFromLib(k){const d=LIB.find(x=>x.k===k);if(!d)return;if(d.b){const ob=d.b();if(WALLS.has(d.k))ob.userData.role='wall';addItem(ob,d.n);if(st.mode==='char'||st.mode==='anim')setJoints(true)}else loadGLB(d.u,d.n,d.s)}
 const loader=window.THREE.GLTFLoader?new T.GLTFLoader():null;
 function normalize(m,size){m.updateMatrixWorld(true);let b=new T.Box3().setFromObject(m),v=b.getSize(new T.Vector3()),s=size/Math.max(v.x,v.y,v.z,1e-4);m.scale.multiplyScalar(s);m.updateMatrixWorld(true);
  b=new T.Box3().setFromObject(m);const c=b.getCenter(new T.Vector3());m.position.x-=c.x;m.position.z-=c.z;m.position.y-=b.min.y}
@@ -244,7 +248,7 @@ const SH=[['Куб','◼',()=>B(1,1,1)],['Шар','⚫',()=>S(.5,24,16)],['Ци�
  ['Тор','🍩',()=>new T.TorusGeometry(.4,.14,14,30)],['Плита','▬',()=>B(2,.1,2)],['Призма','🔻',()=>C(.5,.5,1,3)],['Октаэдр','💠',()=>new T.OctahedronGeometry(.55)],['Купол','🌓',()=>new T.SphereGeometry(.55,24,12,0,Math.PI*2,0,Math.PI/2)]];
 function addShape(i){const m=new T.Mesh(SH[i][2](),new T.MeshStandardMaterial({color:curColor(),roughness:.6,side:T.DoubleSide}));m.userData.part=SH[i][0];useColor();addItem(m,SH[i][0])}
 function addLamp(){const g=new T.Group(),c=curColor();g.add(new T.PointLight(c,1.2,10));const b=new T.Mesh(S(.12,12,8),new T.MeshBasicMaterial({color:c}));b.userData.part='лампа';g.add(b);g.userData.air=2;addItem(g,'Лампа (свет)')}
-function fillCity(){const added=[],add=(o,n,x,z,ry)=>{o.userData.isItem=true;o.userData.name=n;o.traverse(q=>{if(q.isMesh){q.castShadow=q.receiveShadow=true}});o.updateMatrixWorld(true);o.position.set(x,0,z);if(ry)o.rotation.y=ry;o.updateMatrixWorld(true);
+function fillCity(){const added=[],add=(o,n,x,z,ry)=>{o.userData.isItem=true;o.userData.name=n;if(n==='Здание')o.userData.role='wall';o.traverse(q=>{if(q.isMesh){q.castShadow=q.receiveShadow=true}});o.updateMatrixWorld(true);o.position.set(x,0,z);if(ry)o.rotation.y=ry;o.updateMatrixWorld(true);
   const b=new T.Box3().setFromObject(o);o.position.y=o.userData.air||-b.min.y;scene.add(o);items.push(o);added.push(o)};
  const bs=[()=>tower(2.2,5.5,1.5,0xd8d2f0),()=>tower(1.8,10,1.8,0xa6dff2),()=>tower(1.6,17,1.6,0xa9b6ee,true),house];
  for(let i=-2;i<=2;i++)for(let j=-2;j<=2;j++){if(i===0||j===0)continue;add(bs[Math.random()*(Math.abs(i)+Math.abs(j)>3?bs.length:3)|0](),'Здание',i*4.2-Math.sign(i)*.6,j*4.2-Math.sign(j)*.6)}
@@ -258,7 +262,7 @@ tc.addEventListener('dragging-changed',e=>{controls.enabled=!e.value});
 let snap=null;
 tc.addEventListener('mouseDown',()=>{const o=tc.object;if(o){const mx=mixers.get(rootOf(o));if(mx)mx.stopAllAction()}if(o)snap={o,p:o.position.clone(),q:o.quaternion.clone(),s:o.scale.clone()}});
 tc.addEventListener('mouseUp',()=>{if(!snap)return;const{o,p,q,s}=snap;if(!(o.position.equals(p)&&o.quaternion.equals(q)&&o.scale.equals(s)))push(()=>{o.position.copy(p);o.quaternion.copy(q);o.scale.copy(s)});snap=null});
-function select(o,isJoint){sel=o||null;tc.detach();if(sel&&st.tool==='select'){tc.attach(sel);tc.setMode(isJoint?'rotate':st.gm)}updateSel();if(st.mode==='anim')renderAnimDyn()}
+function select(o,isJoint){sel=o||null;tc.detach();if(sel&&st.tool==='select'){tc.attach(sel);tc.setMode(isJoint?'rotate':st.gm)}updateSel();if(st.mode==='anim')renderAnimDyn();if(st.tab==='play')renderPlay()}
 function updateSel(){const b=$('#selbar');if(!sel){b.style.display='none';return}const j=!!(sel.isBone||sel.userData.joint),nm=j?(sel.userData.label||sel.name):sel.userData.name;
  b.style.display='flex';b.innerHTML=`<b>${nm}</b>`+['translate:↔','rotate:⟳','scale:⤢'].map(s=>{const[k,i]=s.split(':');return `<button class="${st.gm===k||(j&&k==='rotate')?'on':''}" data-s="${k}">${i}</button>`}).join('')+
  `<button data-s="eye">${st.joints?'🦴':'🙈'}</button>`+(j?'':'<button data-s="dup">⧉</button><button data-s="del">🗑</button>')}
@@ -309,11 +313,11 @@ function tapTool(e){setRay(e);
   else{const old=o.material;let nm;if(Array.isArray(old)){nm=old.slice();const i=h.f.materialIndex;nm[i]=old[i].clone();nm[i].map=null;nm[i].color.copy(curColor())}else{nm=old.clone();nm.map=null;nm.color.copy(curColor())}o.material=nm;push(()=>{o.material=old})}
   useColor();return}
  if(st.tool==='erase'){const o=h.o;if(o.isInstancedMesh){const r=rootOf(o);if(r===o)removeItem(o);else{const par=o.parent;par.remove(o);const i=strokes.indexOf(o);if(i>=0)strokes.splice(i,1);push(()=>{par.add(o);strokes.push(o)})}}else toast('Ластик стирает мазки. Предметы удаляются кнопкой 🗑')}}
-cv.addEventListener('pointerdown',e=>{pointers.add(e.pointerId);if(pointers.size>1){cur=null;return}
+cv.addEventListener('pointerdown',e=>{if(game)return;pointers.add(e.pointerId);if(pointers.size>1){cur=null;return}
  down={x:e.clientX,y:e.clientY,t:performance.now(),ok:!(tc.axis&&sel&&st.tool==='select')};
  if(st.tool==='brush'||st.tool==='paint')brushStart(e)});
 cv.addEventListener('pointermove',e=>{if(!cur||pointers.size!==1)return;setRay(e);const s=samplePoint();if(s)brushAdd(e,s)});
-const up=e=>{pointers.delete(e.pointerId);if(cur){brushEnd();return}
+const up=e=>{if(game)return;pointers.delete(e.pointerId);if(cur){brushEnd();return}
  if(down&&down.ok&&pointers.size===0&&st.tool!=='brush'&&st.tool!=='paint'&&Math.hypot(e.clientX-down.x,e.clientY-down.y)<9&&performance.now()-down.t<500)tapTool(e);if(!pointers.size)down=null};
 cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',e=>{pointers.delete(e.pointerId);cur=null});
 const TOOLS=[['select','☝','Выбрать'],['brush','🖌','Кисть'],['paint','🖍','Краска'],['fill','🪣','Заливка'],['pipette','💧','Пипетка'],['erase','🧽','Ластик']];
@@ -342,9 +346,9 @@ function playClip(r,name){let m=mixers.get(r);if(!m){m=new T.AnimationMixer(r);m
 const clock=new T.Clock();
 function tick(){requestAnimationFrame(tick);const dt=Math.min(clock.getDelta(),.1);
  if(st.playing){st.Tm+=dt;if(st.Tm>st.dur){if(st.loop)st.Tm=0;else{st.Tm=st.dur;st.playing=false;syncPlay()}}applyKeys(st.Tm);syncTime()}
- mixers.forEach(m=>m.update(dt));
+ mixers.forEach(m=>m.update(dt));if(game)game.update(dt);
  items.forEach(o=>{if(o.userData.walkOn){o.userData.wt=(o.userData.wt||0)+dt;if(o.userData.walkType)walkPose(o,o.userData.wt);o.translateZ((o.userData.speed??1)*dt)}});
- controls.update();renderer.render(scene,camera)}
+ if(!game)controls.update();renderer.render(scene,camera)}
 
 /* ---------- панели ---------- */
 const pb=$('#pb');
@@ -366,6 +370,7 @@ pb.innerHTML=`
 <div class="tp" id="tp-layers"></div>
 <div class="tp" id="tp-light"></div>
 <div class="tp" id="tp-game"></div>
+<div class="tp" id="tp-play"></div>
 <div class="tp" id="tp-anim">
  <div class="row"><button id="pl" data-a="play">▶</button><label><input type="range" min="0" max="4000" value="0" id="tr" data-i="T"></label><b id="tl" style="min-width:76px;text-align:right">0.00 с</b></div>
  <div class="row"><button class="on" data-a="key">＋ Кадр</button><button data-a="keydel">✕ Кадр</button><button id="lp" class="on" data-a="loop">🔁</button>
@@ -375,7 +380,7 @@ const tp=n=>$('#tp-'+n);
 function showTab(n){if(n===st.tab&&!$('#dock').classList.contains('min')&&!showTab.force){$('#dock').classList.add('min');return}showTab.force=0;
  $('#dock').classList.remove('min');st.tab=n;$$('.tp').forEach(x=>x.classList.toggle('on',x.id==='tp-'+n));$$('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===n));renderAll()}
 function openTab(n){showTab.force=1;showTab(n)}
-function renderAll(){const n=st.tab;if(n==='lib')renderLib();else if(n==='shape')renderShape();else if(n==='layers')renderLayers();else if(n==='light')renderLight();else if(n==='anim')renderAnimDyn();else if(n==='brush')renderBrush();else if(n==='game')renderGame()}
+function renderAll(){const n=st.tab;if(n==='lib')renderLib();else if(n==='shape')renderShape();else if(n==='layers')renderLayers();else if(n==='light')renderLight();else if(n==='anim')renderAnimDyn();else if(n==='brush')renderBrush();else if(n==='game')renderGame();else if(n==='play')renderPlay()}
 function renderLib(){const cats=[['chars','Персонажи'],['animals','Животные'],['veh','Транспорт'],['props','Предметы'],['city','Город'],['nature','Природа']];
  let h='<div class="chips">'+cats.map(([k,n])=>`<button class="${st.cat===k?'on':''}" data-a="cat" data-v="${k}">${n}</button>`).join('')+'</div><div class="grid">'+
  LIB.filter(x=>x.c===st.cat).map(x=>`<button class="card" data-a="add" data-v="${x.k}"${bad.has(x.k)?' style="opacity:.4"':''}><span>${bad.has(x.k)?'⚠️':x.e}</span>${x.n}${x.l?`<i>${x.l}</i>`:''}</button>`).join('')+'</div>';
@@ -383,6 +388,31 @@ function renderLib(){const cats=[['chars','Персонажи'],['animals','Жи
  if(st.cat!=='nature')h+='<div class="row"><input type="text" id="urlin" style="flex:1;width:auto" placeholder="ссылка на .glb"><button data-a="url">＋ По ссылке</button><button data-a="upload">⬆ Свой файл</button></div><div class="note">Модели грузятся из открытых библиотек — нужен интернет. «Блок» — простая заготовка. Лицензию смотри под названием.</div>';
  tp('lib').innerHTML=h}
 function renderShape(){tp('shape').innerHTML='<div class="grid">'+SH.map((s,i)=>`<button class="card" data-a="shape" data-v="${i}"><span>${s[1]}</span>${s[0]}</button>`).join('')+'</div><div class="row"><button data-a="lamp">💡 Лампа (точечный свет)</button></div><div class="note">Фигура берёт цвет из вкладки «Цвет». Потяни рамку, чтобы двигать, крутить или менять размер. Из фигур можно собрать что угодно — а потом дорисовать кистью.</div>'}
+const ROLES={decor:['🎨','Декор'],wall:['🧱','Твёрдое'],coin:['⭐','Собрать'],hazard:['☠️','Опасность'],goal:['🏁','Финиш'],patrol:['👾','Враг ходит']};
+function renderPlay(){const pl=items.find(i=>i.userData.isPlayer),r=sel?rootOf(sel):null;
+ let h=`<div class="note"><b>Герой:</b> ${pl?pl.userData.name:'не выбран'}</div><div class="row"><button class="on" data-a="setplayer">🎮 Сделать выбранное героем</button><button data-a="faceplayer">↻ Развернуть героя</button></div>`;
+ if(pl)h+=`<div class="row"><label>Скорость героя<input type="range" min="40" max="300" value="${(pl.userData.pspeed||1)*100}" data-i="pspeed"></label></div>`;
+ h+='<div class="note"><b>Роль предмета:</b>'+(r?' '+r.userData.name:' коснись предмета на сцене (☝)')+'</div>';
+ if(r&&!r.userData.isPlayer)h+='<div class="chips">'+Object.entries(ROLES).map(([k,[i,n]])=>`<button class="${(r.userData.role||'decor')===k?'on':''}" data-a="role" data-v="${k}">${i} ${n}</button>`).join('')+'</div>';
+ h+='<div class="row"><button class="on" style="flex:1;padding:14px" data-a="playgo">▶ ИГРАТЬ</button><button data-a="savegame">⬇ Игра (.html)</button></div><div class="note">Твёрдое — стены, через них не пройти. Собрать — монеты. Опасность и «Враг ходит» возвращают героя на старт. Финиш открывается, когда собрано всё. Если герой идёт боком или задом — жми «Развернуть героя».</div>';
+ tp('play').innerHTML=h}
+let game=null,playSave=null;
+function restoreSnap(sn){const nodes={};trackables().forEach(o=>nodes[o.uuid]=o);for(const id in sn){const o=nodes[id],A=sn[id];if(!o)continue;o.position.set(A[0],A[1],A[2]);o.quaternion.set(A[3],A[4],A[5],A[6]);o.scale.set(A[7],A[8],A[9])}}
+function startPlay(){if(!window.QWEngine){toast('Не найден файл engine.js — положи его рядом с сайтом',5000);return}
+ if(!items.some(i=>i.userData.isPlayer)){toast('Сначала выбери героя: коснись его и нажми «Сделать выбранное героем»',4500);return}
+ st.playing=false;playSave={snap:snapshot(),cam:camera.position.clone(),tgt:controls.target.clone(),joints:st.joints,vis:items.map(i=>i.visible)};
+ select(null);setJoints(false);controls.enabled=false;
+ items.forEach(i=>{if(i.userData.isPlayer||i.userData.role==='patrol'){const m=mixers.get(i);if(m)m.stopAllAction()}i.userData.walkOn=false});
+ document.body.classList.add('playing');
+ game=QWEngine.create({scene,camera,dom:cv,roots:items.slice(),clips:r=>clipsOf.get(r)||[],onExit:stopPlay});
+ if(!game)stopPlay()}
+function stopPlay(){if(game){game.stop();game=null}document.body.classList.remove('playing');const sv=playSave;playSave=null;
+ if(sv){restoreSnap(sv.snap);camera.position.copy(sv.cam);controls.target.copy(sv.tgt);items.forEach((i,k)=>{if(sv.vis[k]!==undefined)i.visible=sv.vis[k]});setJoints(sv.joints)}controls.enabled=true}
+function exportGame(){if(!window.QWEngine){toast('Не найден файл engine.js',4000);return}
+ if(!items.some(i=>i.userData.isPlayer)){toast('Сначала выбери героя');return}
+ toast('Собираю игру…',8000);
+ exportGLB(async buf=>{try{const html=await QWEngine.buildHTML(buf,{light:st.light,shadow:st.shadow,ground:st.ground,name:st.fname||'Игра'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([html],{type:'text/html'}));a.download=(st.fname||'game').replace(/[^\w.-]+/g,'_')+'.html';a.click();toast('Игра сохранена: открой этот файл или выложи на GitHub',5000)}catch(e){toast('Не получилось собрать игру. Открой сайт со ссылки, а не с файла')}},true)}
 function stats(){let tri=0;items.forEach(it=>{if(!it.visible)return;it.traverse(o=>{if(o.userData.marker||!o.isMesh||!o.visible||!o.geometry)return;const g=o.geometry,n=(g.index?g.index.count:g.attributes.position.count)/3;tri+=o.isInstancedMesh?n*o.count:n})});return{tri:Math.round(tri),obj:items.length}}
 function renderGame(){const m=stats();tp('game').innerHTML=`<div class="note"><b>Вес сцены:</b> ${m.tri.toLocaleString('ru')} треугольников · ${m.obj} предметов<br>${m.tri>st.budget?'⚠ Тяжело для мобильной игры: убери лишнее или возьми модели проще':'В пределах бюджета'}</div>
 <div class="row"><label>Бюджет сцены<select data-i="budget">${[50000,100000,300000].map(v=>`<option value="${v}" ${v==st.budget?'selected':''}>${v/1000} тыс. треугольников</option>`).join('')}</select></label></div>
@@ -462,6 +492,10 @@ pb.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)retur
  case'walk':{const r=rootOf(sel);if(!r)break;r.userData.walkOn=!r.userData.walkOn;if(!r.userData.walkOn){walkReset(r);mixers.get(r)&&mixers.get(r).stopAllAction()}
   else{const cl=clipsOf.get(r)||[],c=cl.find(c=>/walk/i.test(c.name))||cl.find(c=>/run|gallop|fly|flap/i.test(c.name));if(c)playClip(r,c.name)}renderAnimDyn();break}
  case'clip':{const r=rootOf(sel);if(r)playClip(r,v);break}
+ case'setplayer':{const r=sel?rootOf(sel):null;if(!r){toast('Сначала коснись героя на сцене (☝)');break}items.forEach(i=>delete i.userData.isPlayer);r.userData.isPlayer=true;r.userData.role='decor';renderPlay();toast('Герой: '+r.userData.name);break}
+ case'faceplayer':{const pp=items.find(i=>i.userData.isPlayer);if(pp){pp.userData.face=((pp.userData.face||0)+Math.PI/2)%(Math.PI*2);toast('Развернул. Проверь в игре')}break}
+ case'role':{const r=sel?rootOf(sel):null;if(r){r.userData.role=v;renderPlay()}break}
+ case'playgo':startPlay();break;case'savegame':exportGame();break;
  case'url':{const u=($('#urlin').value||'').trim();if(u)loadGLB(u,'Моя модель',1.8);else toast('Вставь ссылку на .glb');break}
  case'check':checkLinks();break;case'export':exportGLB();break;
  case'focus':{const r=sel?(rootOf(sel)||sel):items[items.length-1];if(!r)break;const bx=new T.Box3().setFromObject(r),c=bx.getCenter(new T.Vector3()),d=Math.max(bx.getSize(new T.Vector3()).length(),1),dir=camera.position.clone().sub(controls.target).normalize();controls.target.copy(c);camera.position.copy(c).addScaledVector(dir,d*1.3);break}
@@ -473,12 +507,16 @@ pb.addEventListener('input',e=>{const t=e.target,k=t.dataset.i;if(!k)return;cons
  else if(k==='dur'){st.dur=+v;st.Tm=Math.min(st.Tm,st.dur);syncTime()}
  else if(k==='speed'){const r=rootOf(sel);if(r)r.userData.speed=v/100}
  else if(['az','el'].includes(k)){L[k]=+v;applyLight()}else if(k==='int'||k==='hemi'){L[k]=v/100;applyLight()}else if(['shadow','ground','grid'].includes(k)){st[k]=v;applyLight()}
- else if(k==='budget'){st.budget=+v;renderGame()}else if(k==='snap'){st.snap=v;applySnap()}else if(k==='ref'){st.ref=v;refShow()}else if(['fname','clipName','expSel','expClip'].includes(k))st[k]=v});
+ else if(k==='pspeed'){const pp=items.find(i=>i.userData.isPlayer);if(pp)pp.userData.pspeed=v/100}else if(k==='budget'){st.budget=+v;renderGame()}else if(k==='snap'){st.snap=v;applySnap()}else if(k==='ref'){st.ref=v;refShow()}else if(['fname','clipName','expSel','expClip'].includes(k))st[k]=v});
 function bake(id){const ss=strokes.filter(s=>s.userData.layer===id&&s.userData.isItem);if(!ss.length)return;const bx=new T.Box3();ss.forEach(s=>bx.expandByObject(s));const g=new T.Group();g.position.copy(bx.getCenter(new T.Vector3()));scene.add(g);
  ss.forEach(s=>{items.splice(items.indexOf(s),1);s.userData.isItem=false;g.attach(s)});g.userData.isItem=true;g.userData.name='Предмет из слоя';items.push(g);select(g);push(()=>removeItem(g,true));renderAll();toast('Мазки склеены в один предмет')}
 
 /* ---------- гид ---------- */
 const GUIDE={
+ play:[['Выбери героя','Добавь модель из «Библиотеки», коснись её (☝) и нажми «Сделать выбранное героем». Если у модели есть движения, она будет ходить и прыгать как надо.'],
+  ['Расставь правила','Коснись предмета и выбери роль: 🧱 твёрдое (стена), ⭐ собрать, ☠️ опасность, 🏁 финиш, 👾 враг ходит туда-сюда. Здания из «Города» уже твёрдые.'],
+  ['Играй','Жми «▶ ИГРАТЬ». Слева круг для ходьбы, справа прыжок, а чтобы повернуть камеру, води пальцем по экрану. Собери все ⭐ и дойди до 🏁.'],
+  ['Сохрани игру','«⬇ Игра (.html)» делает один файл. Открой его на любом телефоне или выложи на GitHub рядом с сайтом, и можно дать ссылку друзьям.']],
  char:[['Возьми героя','Открой «Библиотека» внизу и коснись модели: персонажи, животные — у них уже есть готовые движения. Можно вставить ссылку на свой .glb или загрузить файл.'],
   ['Покрась','Вкладка «Цвет»: води пальцем по кругу — это цвет, ползунок — яркость. Инструмент 🪣 красит всю часть, 🖍 кладёт слой краски, 🖌 рисует объёмом, 💧 берёт цвет с модели.'],
   ['Дострой','«Фигуры» — куб, шар, конус и другие: двигай их рамкой и собирай хоть шлем, хоть хвост. Кисть тонкая как усы или толстая как рукоять — размер меняй во вкладке «Кисть».'],
@@ -486,7 +524,7 @@ const GUIDE={
  item:[['Возьми или собери','«Библиотека → Предметы» — готовые вещи. Или собери свою из «Фигур»: тяни рамку (↔ двигать, ⟳ крутить, ⤢ размер, панель справа сверху).'],
   ['Дорисуй кистью','Кисть 🖌: один палец рисует, двумя крутишь и приближаешь. Пресеты «Усы» … «Кувалда» дают нужную толщину, а ползунок — любую.'],
   ['Слои','На «отдельном» слое мазки — самостоятельные вещи. Нажми «Склеить мазки слоя в один предмет» — и рукоять из мазков станет одним предметом.'],
-  ['В игру','Вкладка «Игра»: вес сцены, шаг по сетке, эталон человека 1,8 м и сохранение в .glb вместе с твоей анимацией. Открывается в Unity, Godot, Unreal.']],
+  ['В игру','Вкладка «Сцена»: вес сцены, шаг по сетке, эталон человека 1,8 м и сохранение в .glb вместе с твоей анимацией. Открывается в Unity, Godot, Unreal.']],
  loc:[['Построй город','Библиотека → «Город»: многоэтажки, дом, авто, фургон, дорога, трубы, фонарь, забор. Кнопка «Собрать город сразу» ставит целый квартал.'],
   ['Небо и природа','Вкладка «Природа»: облака, деревья, ёлки, камни, горы. Облака сами повисают в воздухе.'],
   ['Двигай','Коснись предмета (☝) — появится рамка. ↔ двигать, ⟳ крутить, ⤢ размер, ⧉ копия, 🗑 убрать.'],
@@ -502,18 +540,18 @@ function guide(m,force){const k='qw_g_'+m;try{if(!force&&localStorage.getItem(k)
 $('#resetg').onclick=()=>{try{Object.keys(GUIDE).forEach(m=>localStorage.removeItem('qw_g_'+m))}catch(e){}toast('Подсказки покажутся снова при входе')};
 
 /* ---------- экспорт ---------- */
-function exportGLB(){if(!items.length||!T.GLTFExporter){toast('Сначала добавь что-нибудь');return}
- tc.detach();const restore=[],list=[],hid=[],src=(st.expSel&&rootOf(sel))?[rootOf(sel)]:items;
+function exportGLB(cb,all){if(!items.length||!T.GLTFExporter){toast('Сначала добавь что-нибудь');return}
+ tc.detach();const restore=[],list=[],hid=[],src=(!all&&st.expSel&&rootOf(sel))?[rootOf(sel)]:items;
  const stub=o=>{const gs=[],m4=new T.Matrix4();for(let i=0;i<o.count;i++){o.getMatrixAt(i,m4);gs.push(o.geometry.clone().applyMatrix4(m4))}
-  const m=new T.Mesh(T.BufferGeometryUtils.mergeBufferGeometries(gs),o.material);o.matrix.decompose(m.position,m.quaternion,m.scale);return m};
+  const m=new T.Mesh(T.BufferGeometryUtils.mergeBufferGeometries(gs),o.material);m.userData=Object.assign({},o.userData);o.matrix.decompose(m.position,m.quaternion,m.scale);return m};
  src.forEach(it=>{if(!it.visible)return;
   if(it.isInstancedMesh){const m=stub(it);scene.add(m);it.visible=false;restore.push(()=>{scene.remove(m);it.visible=true});list.push(m);return}
   const inst=[];it.traverse(o=>{if(o!==it&&o.isInstancedMesh&&o.visible)inst.push(o)});
   inst.forEach(o=>{const m=stub(o);o.parent.add(m);o.visible=false;restore.push(()=>{m.parent.remove(m);o.visible=true})});list.push(it)});
  items.forEach(it=>it.traverse(o=>{if(o.userData.marker&&o.visible){o.visible=false;hid.push(o)}}));
- const anims=[];src.forEach(it=>(clipsOf.get(it)||[]).forEach(c=>anims.push(c)));if(st.expClip){try{const bc=bakeClip(list);if(bc)anims.push(bc)}catch(e){}}
+ const anims=[];src.forEach(it=>(clipsOf.get(it)||[]).forEach(c=>anims.push(c)));if(st.expClip&&!cb){try{const bc=bakeClip(list);if(bc)anims.push(bc)}catch(e){}}
  const back=()=>{hid.forEach(o=>o.visible=true);restore.forEach(f=>f());if(sel&&st.tool==='select')tc.attach(sel)};
- const done=r=>{back();const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([r],{type:'model/gltf-binary'}));const fn=(st.fname||'qwerty').replace(/[^\w.-]+/g,'_')+'.glb';a.download=fn;a.click();toast('Сохранено: '+fn)};
+ const done=r=>{back();if(cb){cb(r);return}const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([r],{type:'model/gltf-binary'}));const fn=(st.fname||'qwerty').replace(/[^\w.-]+/g,'_')+'.glb';a.download=fn;a.click();toast('Сохранено: '+fn)};
  const fail=()=>{back();toast('Не получилось сохранить')};
  try{const ex=new T.GLTFExporter(),opt={binary:true,onlyVisible:true,animations:anims};
   if(ex.parse.length>=4)ex.parse(list,done,fail,opt);else ex.parse(list,done,opt)}catch(e){fail()}}
@@ -531,7 +569,7 @@ $$('.hc').forEach(b=>b.onclick=()=>enter(b.dataset.m));
 $('#bhome').onclick=()=>{$('#ed').style.display='none';$('#home').style.display='block';st.playing=false};
 $('#bundo').onclick=()=>{const f=undoS.pop();if(f){f();renderAll()}else toast('Откатывать нечего')};
 $('#bhelp').onclick=()=>guide(st.mode,true);
-$('#bexp').onclick=exportGLB;
+$('#bexp').onclick=()=>exportGLB();
 renderSw();applyLight();tick();
 setInterval(()=>{const m=stats(),h=$('#hud');h.textContent='△ '+(m.tri>=1000?(m.tri/1000).toFixed(1)+'k':m.tri);h.style.color=m.tri>st.budget?'#ff7b8f':'#a9b6d8'},700);
 })();
