@@ -75,7 +75,7 @@
   .hint { font-size: 13px; opacity: .7; line-height: 1.3; }
 
   /* вкладки */
-  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .tabs { display: flex; gap: 6px; } .tab { flex: 1; }
   .tab {
     min-height: 38px; padding: 0 2px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
     background: transparent; color: var(--paper);
@@ -135,6 +135,10 @@
   .pk-n { text-align: center; padding: 0 2px !important; -moz-appearance: textfield; appearance: textfield; }
   .pk-n::-webkit-outer-spin-button, .pk-n::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
+  #home{position:fixed;inset:0;z-index:10;background:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:20px}
+#home h1{margin:0 0 8px;font-size:28px}
+#home .btn{flex:none;width:min(320px,90%);min-height:64px;font-size:18px}
+
   /* вертикальный экран: панель снизу */
   @media (max-aspect-ratio: 1/1) {
     body { grid-template-columns: 1fr; grid-template-rows: 1fr minmax(0, 46dvh); }
@@ -153,9 +157,15 @@
 </script>
 </head>
 <body>
+  <div id="home">
+  <h1>Аниматор</h1>
+  <button class="btn" id="goMake" type="button">Создать персонажа</button>
+  <button class="btn" id="goAnim" type="button">Анимировать</button>
+</div>
   <div id="stage"><canvas id="view"></canvas></div>
 
   <aside id="panel">
+    <button class="btn" id="goHome" type="button" style="flex:none">← Главная</button>
     <div class="tabs" role="tablist">
       <button class="tab" id="tabPoseBtn" role="tab" aria-selected="true" type="button">Поза</button>
       <button class="tab" id="tabWalkBtn" role="tab" aria-selected="false" type="button">Ходьба</button>
@@ -235,6 +245,10 @@
       <div id="pickerHost" hidden></div>
     </section>
     <section id="tabDraw" hidden>
+      <div class="row">
+  <select id="lib" aria-label="Библиотека"></select>
+  <button class="btn" id="libLoad" type="button">Взять из библиотеки</button>
+</div>
   <div class="row">
     <button class="btn on" id="mPen" type="button">Карандаш</button>
     <button class="btn" id="mJoint" type="button">Суставы</button>
@@ -242,7 +256,7 @@
   <div class="hint">Карандаш: рисуй одним пальцем, двумя крути камеру. Суставы: нажми на форму, и сустав появится в списке во вкладке «Поза». Ставь суставы в нулевой позе.</div>
   <div class="row" id="inkColors"></div>
   <div class="ax"><span>Толщина</span><output id="orad">4 см</output>
-    <input id="srad" type="range" min="1" max="15" step="1" value="4"></div>
+    <input id="srad" type="range" min="0.3" max="15" step="0.1" value="4"></div>
   <div class="ax"><span>Глубина</span><output id="odep">0 см</output>
     <input id="sdep" type="range" min="-100" max="100" step="5" value="0"></div>
   <div class="row">
@@ -809,6 +823,29 @@ $('rootInk').addEventListener('click', () => { sketch.newChain(); say('След�
   $('inkColors').appendChild(b);
 });
 $('foxBtn').addEventListener('click', () => loadModel(FOX_URL));
+  const LIBRARY = [
+  ['Человек', SAMPLE_URL],
+  ['Лиса', FOX_URL]
+];
+LIBRARY.forEach(([name, url]) => {
+  const o = document.createElement('option');
+  o.value = url; o.textContent = name;
+  $('lib').appendChild(o);
+});
+$('libLoad').addEventListener('click', () => loadModel($('lib').value));
+
+function openSection(kind) {
+  $('home').hidden = true;
+  const make = kind === 'make';
+  $('tabPoseBtn').hidden = make;
+  $('tabWalkBtn').hidden = make;
+  $('tabLookBtn').hidden = !make;
+  $('tabDrawBtn').hidden = !make;
+  showTab(make ? 'look' : 'pose');
+}
+$('goMake').addEventListener('click', () => openSection('make'));
+$('goAnim').addEventListener('click', () => openSection('anim'));
+$('goHome').addEventListener('click', () => { if (playing) stopPlay(); $('home').hidden = false; });
   
 let down = null;
 let touches = 0;
