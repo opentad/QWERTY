@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Редактор игр</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #0e0f18; color: #e8eaf8; font-family: system-ui, -apple-system, Roboto, sans-serif; font-size: 14px; overflow: hidden; touch-action: manipulation; overscroll-behavior: none; }
+  [hidden] { display: none !important; }
+  button { font: inherit; color: inherit; background: #2a2d45; border: 0; border-radius: 9px; padding: 0 10px; height: 36px; cursor: pointer; }
+  button:active { filter: brightness(1.25); }
+  button.primary { background: #2f8f5b; font-weight: 700; }
+  button.warn { background: #8a3a4a; }
+  button:disabled { opacity: 0.5; }
+  input[type=text], textarea { font: inherit; color: #fff; background: #181a2b; border: 1px solid #343857; border-radius: 8px; padding: 6px 8px; width: 100%; }
+  textarea { height: 90px; resize: none; font-family: monospace; font-size: 11px; }
+
+  #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+  #top { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: #151728; border-bottom: 1px solid #262944; }
+  #gTitle { width: 190px; flex: 0 0 auto; font-weight: 700; }
+  .grp { display: flex; align-items: center; gap: 4px; }
+  .grp button { width: 36px; padding: 0; }
+  #lvLabel { min-width: 58px; text-align: center; font-weight: 700; }
+  #status { flex: 1; text-align: right; color: #8df0b5; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #status.bad { color: #ffb36b; }
+
+  #main { flex: 1; display: flex; min-height: 0; }
+  #tools { width: 52px; display: flex; flex-direction: column; gap: 6px; padding: 6px; background: #121424; align-items: center; }
+  #tools button { width: 40px; height: 40px; padding: 0; font-size: 18px; }
+  #tools button.on { background: #4b5bd8; }
+  #stage { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #cvWrap { flex: 1; position: relative; min-height: 0; }
+  #cv { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+  #palWrap { background: #121424; border-top: 1px solid #262944; padding: 4px 6px 6px; }
+  #tip { font-size: 12px; color: #aab0d0; height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 3px; }
+  #pal { display: flex; gap: 5px; overflow-x: auto; }
+  .chip { flex: 0 0 auto; width: 54px; height: 62px; padding: 3px 0 0; display: flex; flex-direction: column; align-items: center; gap: 2px; background: #1c1f35; }
+  .chip.on { background: #4b5bd8; }
+  .chip canvas { width: 36px; height: 36px; border-radius: 6px; }
+  .chip span { font-size: 10px; }
+
+  #side { width: 240px; background: #151728; border-left: 1px solid #262944; display: flex; flex-direction: column; min-height: 0; }
+  #tabs { display: flex; gap: 4px; padding: 6px; }
+  #tabs button { flex: 1; height: 32px; padding: 0; font-size: 13px; }
+  #tabs button.on { background: #4b5bd8; font-weight: 700; }
+  .pane { flex: 1; overflow-y: auto; padding: 4px 8px 12px; }
+  .pane label { display: block; font-size: 12px; color: #aab0d0; margin: 8px 0 3px; }
+  .row { display: flex; align-items: center; gap: 6px; }
+  .row .v { min-width: 34px; text-align: center; font-weight: 700; }
+  .row button { width: 36px; padding: 0; }
+  input[type=range] { width: 100%; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chips button { height: 32px; font-size: 13px; }
+  .chips button.on { background: #4b5bd8; }
+  .sw { width: 30px; height: 30px; padding: 0; border: 2px solid transparent; border-radius: 50%; }
+  .sw.on { border-color: #fff; }
+  .hint { font-size: 12px; color: #aab0d0; margin: 4px 0; line-height: 1.35; }
+  .full { width: 100%; margin-top: 6px; }
+
+  #testWrap { position: fixed; inset: 0; background: #000; z-index: 50; }
+  #testFrame { width: 100%; height: 100%; border: 0; display: block; }
+</style>
+<script>
+  // Показывает ошибки прямо на экране (на планшете нет devtools)
+  window.__showErr = function (m) {
+    var d = document.getElementById('err');
+    if (!d) {
+      d = document.createElement('div');
+      d.id = 'err';
+      d.style.cssText = 'position:fixed;left:0;right:0;bottom:0;max-height:40%;overflow:auto;background:#7a1020;color:#fff;font:12px/1.4 monospace;padding:6px 8px;z-index:99;white-space:pre-wrap';
+      (document.body || document.documentElement).appendChild(d);
+    }
+    d.textContent += m + '\n';
+  };
+  window.addEventListener('error', function (e) {
+    __showErr('Ошибка: ' + e.message + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : ''));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    __showErr('Promise: ' + ((e.reason && e.reason.message) || e.reason));
+  });
+</script>
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <input id="gTitle" type="text" maxlength="40" placeholder="Название игры">
+    <div class="grp">
+      <button id="lvPrev">‹</button>
+      <span id="lvLabel">1/1</span>
+      <button id="lvNext">›</button>
+      <button id="lvAdd">＋</button>
+      <button id="lvDel">🗑</button>
+    </div>
+    <span id="status"></span>
+    <button id="btnPlay" class="primary">▶ Играть</button>
+  </header>
+
+  <div id="main">
+    <nav id="tools">
+      <button id="tBrush" class="on" title="Кисть">✏️</button>
+      <button id="tEraser" title="Ластик">⌫</button>
+      <button id="tHand" title="Двигать карту">✋</button>
+      <button id="tUndo" title="Отмена">↶</button>
+      <button id="tZoomIn" title="Крупнее">＋</button>
+      <button id="tZoomOut" title="Мельче">－</button>
+    </nav>
+
+    <section id="stage">
+      <div id="cvWrap"><canvas id="cv"></canvas></div>
+      <div id="palWrap">
+        <div id="tip"></div>
+        <div id="pal"></div>
+      </div>
+    </section>
+
+    <aside id="side">
+      <div id="tabs">
+        <button data-tab="level" class="on">Уровень</button>
+        <button data-tab="game">Игра</button>
+        <button data-tab="file">Файл</button>
+      </div>
+
+      <div class="pane" id="pane-level">
+        <label>Название уровня</label>
+        <input id="lvName" type="text" maxlength="30">
+        <label>Ширина (клеток)</label>
+        <div class="row"><button id="wMinus">−</button><span class="v" id="wVal">40</span><button id="wPlus">+</button></div>
+        <label>Высота (клеток)</label>
+        <div class="row"><button id="hMinus">−</button><span class="v" id="hVal">14</span><button id="hPlus">+</button></div>
+        <button id="lvClear" class="full">Очистить уровень</button>
+        <div class="hint">Пальцем рисуй объекты. Два пальца — двигать карту. Герой (синий) и дверь-выход обязательны.</div>
+      </div>
+
+      <div class="pane" id="pane-game" hidden>
+        <label>Тема</label>
+        <div class="chips" id="themes"></div>
+        <label>Цвет героя</label>
+        <div class="chips" id="colors"></div>
+        <label>Скорость героя: <b id="spVal"></b></label>
+        <input id="spd" type="range" min="120" max="400" step="10">
+        <label>Сила прыжка: <b id="jpVal"></b></label>
+        <input id="jmp" type="range" min="400" max="900" step="20">
+        <label>Тяжесть: <b id="grVal"></b></label>
+        <input id="grv" type="range" min="800" max="2500" step="100">
+        <div class="hint" id="jumpHint"></div>
+      </div>
+
+      <div class="pane" id="pane-file" hidden>
+        <label>Твоё имя (автор)</label>
+        <input id="author" type="text" maxlength="30" placeholder="как подписать игру">
+        <button id="btnPub" class="primary full">Опубликовать</button>
+        <div class="hint" id="pubStatus"></div>
+        <div id="pubOut" hidden>
+          <label>Ссылка на игру</label>
+          <div class="row"><input id="pubLink" type="text" readonly><button id="cpLink">⧉</button></div>
+          <label>Код для вставки на сайт</label>
+          <div class="row"><input id="pubEmbed" type="text" readonly><button id="cpEmbed">⧉</button></div>
+        </div>
+        <label>Код игры (копия/перенос)</label>
+        <textarea id="code" spellcheck="false"></textarea>
+        <div class="row">
+          <button id="btnShow" class="full" style="margin-top:0">Показать</button>
+          <button id="btnLoad" class="full" style="margin-top:0">Загрузить</button>
+        </div>
+        <button id="btnNew" class="full">Новая игра</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div id="testWrap" hidden><iframe id="testFrame" title="Тест игры"></iframe></div>
+
+<script src="config.js"></script>
+<script src="engine.js"></script>
+<script src="runtime.js"></script>
+<script>
+(function () {
+  'use strict';
+  var R = MiniRuntime;
+  var cfg = window.MK_CONFIG || {};
+  var $ = function (id) { return document.getElementById(id); };
+  var clamp = function (v, a, b) { return Math.max(a, Math.min(b, v)); };
+  var KEY = 'mk_editor_game';
+
+  /* ---------- Состояние ---------- */
+  var game = loadGame();
+  var li = 0;
+  var tool = 'brush';
+  var sel = '#';
+  var cell = 28;
+  var offX = 16, offY = 16;
+  var undo = [];
+  var dirty = true;
+
+  function loadGame() {
+    try {
+      var s = localStorage.getItem(KEY);
+      if (s) return R.sanitize(JSON.parse(s));
+    } catch (e) { /* начнём заново */ }
+    return R.defaultGame();
+  }
+  function cur() { return game.levels[li]; }
+
+  var saveTimer = null;
+  function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      try { localStorage.setItem(KEY, JSON.stringify(game)); } catch (e) { /* нет места */ }
+    }, 300);
+  }
+
+  /* ---------- Холст ---------- */
+  var cv = $('cv');
+  var cx = cv.getContext('2d');
+  var dpr = 1, sw = 300, sh = 300;
+
+  function fit() {
+    var r = $('cvWrap').getBoundingClientRect();
+    sw = Math.max(50, r.width);
+    sh = Math.max(50, r.height);
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = Math.round(sw * dpr);
+    cv.height = Math.round(sh * dpr);
+    clampPan();
+    dirty = true;
+  }
+  window.addEventListener('resize', fit);
+  if (window.ResizeObserver) new ResizeObserver(fit).observe($('cvWrap'));
+
+  function clampPan() {
+    var l = cur();
+    var mw = l.cols * cell, mh = l.rows * cell;
+    offX = clamp(offX, Math.min(40, sw - mw - 40), 40);
+    offY = clamp(offY, Math.min(40, sh - mh - 40), 40);
+  }
+
+  function draw() {
+    var l = cur(), S = game.settings, T = R.THEMES[S.theme];
+    cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cx.fillStyle = '#0b0c14';
+    cx.fillRect(0, 0, sw, sh);
+    var mw = l.cols * cell, mh = l.rows * cell;
+    var g = cx.createLinearGradient(0, offY, 0, offY + mh);
+    g.addColorStop(0, T.top);
+    g.addColorStop(1, T.bot);
+    cx.fillStyle = g;
+    cx.fillRect(offX, offY, mw, mh);
+
+    var c0 = Math.max(0, Math.floor(-offX / cell));
+    var c1 = Math.min(l.cols - 1, Math.floor((sw - offX) / cell));
+    var r0 = Math.max(0, Math.floor(-offY / cell));
+    var r1 = Math.min(l.rows - 1, Math.floor((sh - offY) / cell));
+
+    cx.strokeStyle = 'rgba(255,255,255,0.08)';
+    cx.lineWidth = 1;
+    cx.beginPath();
+    var c, r, x, y;
+    for (c = c0; c <= c1 + 1; c++) {
+      x = Math.round(offX + c * cell) + 0.5;
+      cx.moveTo(x, offY); cx.lineTo(x, offY + mh);
+    }
+    for (r = r0; r <= r1 + 1; r++) {
+      y = Math.round(offY + r * cell) + 0.5;
+      cx.moveTo(offX, y); cx.lineTo(offX + mw, y);
+    }
+    cx.stroke();
+
+    for (r = r0; r <= r1; r++) {
+      var row = l.map[r];
+      for (c = c0; c <= c1; c++) {
+        var ch = row.charAt(c);
+        if (ch !== '.') R.drawIcon(cx, ch, offX + c * cell, offY + r * cell, cell, S);
+      }
+    }
+    cx.strokeStyle = 'rgba(255,255,255,0.4)';
+    cx.lineWidth = 2;
+    cx.strokeRect(offX, offY, mw, mh);
+  }
+
+  (function tick() {
+    if (dirty) { dirty = false; draw(); }
+    requestAnimationFrame(tick);
+  })();
+
+  /* ---------- Рисование пальцем ---------- */
+  var ptrs = new Map();
+  var stroke = null;
+  var panLast = null;
+  var multi = false;
+
+  function pos(e) {
+    var r = cv.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+  function cellAt(p) {
+    return { c: Math.floor((p.x - offX) / cell), r: Math.floor((p.y - offY) / cell) };
+  }
+  function centroid() {
+    var sx = 0, sy = 0, n = 0;
+    ptrs.forEach(function (p) { sx += p.x; sy += p.y; n++; });
+    return { x: sx / n, y: sy / n };
+  }
+
+  function clearChar(ch) {
+    var l = cur();
+    for (var r = 0; r < l.rows; r++) {
+      if (l.map[r].indexOf(ch) >= 0) l.map[r] = l.map[r].split(ch).join('.');
+    }
+  }
+
+  function paint(c, r) {
+    var l = cur();
+    if (c < 0 || r < 0 || c >= l.cols || r >= l.rows) return;
+    var ch = tool === 'eraser' ? '.' : sel;
+    if (l.map[r].charAt(c) === ch) return;
+    if (ch === '@') clearChar('@');
+    l.map[r] = l.map[r].slice(0, c) + ch + l.map[r].slice(c + 1);
+    stroke.changed = true;
+    dirty = true;
+  }
+
+  function line(a, b) {
+    var dx = Math.abs(b.c - a.c), dy = Math.abs(b.r - a.r);
+    var sx = a.c < b.c ? 1 : -1, sy = a.r < b.r ? 1 : -1;
+    var err = dx - dy, c = a.c, r = a.r;
+    for (var i = 0; i < 400; i++) {
+      paint(c, r);
+      if (c === b.c && r === b.r) break;
+      var e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; c += sx; }
+      if (e2 < dx) { err += dx; r += sy; }
+    }
+  }
+
+  function beginStroke(p) {
+    stroke = { snap: cur().map.slice(), last: null, changed: false };
+    continueStroke(p);
+  }
+  function continueStroke(p) {
+    var a = cellAt(p);
+    if (stroke.last) line(stroke.last, a); else paint(a.c, a.r);
+    stroke.last = a;
+  }
+  function endStroke() {
+    if (stroke && stroke.changed) {
+      undo.push({ li: li, map: stroke.snap });
+      if (undo.length > 50) undo.shift();
+      save();
+      refreshStatus();
+    }
+    stroke = null;
+  }
+  function cancelStroke() {
+    if (stroke) {
+      if (stroke.changed) { cur().map = stroke.snap; dirty = true; }
+      stroke = null;
+    }
+  }
+
+  cv.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    try { cv.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    var p = pos(e);
+    ptrs.set(e.pointerId, { x: p.x, y: p.y });
+    if (ptrs.size >= 2) { multi = true; cancelStroke(); panLast = null; return; }
+    if (multi) return;
+    if (tool === 'hand') { panLast = { x: p.x, y: p.y }; return; }
+    beginStroke(p);
+  });
+
+  cv.addEventListener('pointermove', function (e) {
+    var q = ptrs.get(e.pointerId);
+    if (!q) return;
+    e.preventDefault();
+    var p = pos(e);
+    if (ptrs.size >= 2) {
+      var old = centroid();
+      q.x = p.x; q.y = p.y;
+      var nw = centroid();
+      offX += nw.x - old.x;
+      offY += nw.y - old.y;
+      clampPan();
+      dirty = true;
+      return;
+    }
+    q.x = p.x; q.y = p.y;
+    if (multi) return;
+    if (tool === 'hand' && panLast) {
+      offX += p.x - panLast.x;
+      offY += p.y - panLast.y;
+      panLast = { x: p.x, y: p.y };
+      clampPan();
+      dirty = true;
+      return;
+    }
+    if (stroke) continueStroke(p);
+  });
+
+  function pointerEnd(e) {
+    ptrs.delete(e.pointerId);
+    if (ptrs.size === 0) {
+      endStroke();
+      panLast = null;
+      multi = false;
+    }
+  }
+  cv.addEventListener('pointerup', pointerEnd);
+  cv.addEventListener('pointercancel', pointerEnd);
+  cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  /* ---------- Инструменты ---------- */
+  function setTool(t) {
+    tool = t;
+    $('tBrush').classList.toggle('on', t === 'brush');
+    $('tEraser').classList.toggle('on', t === 'eraser');
+    $('tHand').classList.toggle('on', t === 'hand');
+  }
+  $('tBrush').onclick = function () { setTool('brush'); };
+  $('tEraser').onclick = function () { setTool('eraser'); };
+  $('tHand').onclick = function () { setTool('hand'); };
+  $('tUndo').onclick = function () {
+    var u = undo.pop();
+    if (!u) return;
+    li = clamp(u.li, 0, game.levels.length - 1);
+    game.levels[li].map = u.map;
+    save();
+    refreshAll();
+  };
+  function zoom(d) {
+    var old = cell;
+    cell = clamp(cell + d, 14, 56);
+    offX = sw / 2 - (sw / 2 - offX) * cell / old;
+    offY = sh / 2 - (sh / 2 - offY) * cell / old;
+    clampPan();
+    dirty = true;
+  }
+  $('tZoomIn').onclick = function () { zoom(4); };
+  $('tZoomOut').onclick = function () { zoom(-4); };
+
+  /* ---------- Палитра ---------- */
+  function buildPalette() {
+    var pal = $('pal');
+    var S = game.settings, T = R.THEMES[S.theme];
+    pal.textContent = '';
+    R.OBJECTS.forEach(function (o) {
+      var b = document.createElement('button');
+      b.className = 'chip' + (o.ch === sel ? ' on' : '');
+      var c = document.createElement('canvas');
+      c.width = 72; c.height = 72;
+      var x = c.getContext('2d');
+      var g = x.createLinearGradient(0, 0, 0, 72);
+      g.addColorStop(0, T.top); g.addColorStop(1, T.bot);
+      x.fillStyle = g; x.fillRect(0, 0, 72, 72);
+      R.drawIcon(x, o.ch, 4, 4, 64, S);
+      var s = document.createElement('span');
+      s.textContent = o.name;
+      b.appendChild(c); b.appendChild(s);
+      b.onclick = function () {
+        sel = o.ch;
+        setTool('brush');
+        showTip();
+        buildPalette();
+      };
+      pal.appendChild(b);
+    });
+    showTip();
+  }
+  function showTip() {
+    var o = R.OBJECTS.filter(function (x) { return x.ch === sel; })[0];
+    $('tip').textContent = o ? o.name + ' — ' + o.tip : '';
+  }
+
+  /* ---------- Верхняя панель ---------- */
+  $('gTitle').oninput = function () { game.title = this.value; save(); };
+  $('lvPrev').onclick = function () { gotoLevel(li - 1); };
+  $('lvNext').onclick = function () { gotoLevel(li + 1); };
+  $('lvAdd').onclick = function () {
+    if (game.levels.length >= 20) { setStatus('Максимум 20 уровней', true); return; }
+    var l = cur();
+    game.levels.push(R.newLevel('Уровень ' + (game.levels.length + 1), l.cols, l.rows));
+    undo = [];
+    gotoLevel(game.levels.length - 1);
+    save();
+  };
+  function gotoLevel(i) {
+    li = clamp(i, 0, game.levels.length - 1);
+    offX = 16; offY = 16;
+    refreshAll();
+  }
+
+  // Кнопка с подтверждением вторым нажатием (без всплывающих окон)
+  function armed(btn, label, fn) {
+    var orig = btn.textContent, t = null;
+    btn.addEventListener('click', function () {
+      if (t) {
+        clearTimeout(t); t = null;
+        btn.textContent = orig; btn.classList.remove('warn');
+        fn();
+      } else {
+        btn.textContent = label; btn.classList.add('warn');
+        t = setTimeout(function () { t = null; btn.textContent = orig; btn.classList.remove('warn'); }, 3000);
+      }
+    });
+  }
+  armed($('lvDel'), 'Точно?', function () {
+    if (game.levels.length < 2) { setStatus('Нужен хотя бы один уровень', true); return; }
+    game.levels.splice(li, 1);
+    undo = [];
+    li = clamp(li, 0, game.levels.length - 1);
+    save();
+    refreshAll();
+  });
+
+  var statusTimer = null;
+  function setStatus(text, bad) {
+    var s = $('status');
+    s.textContent = text;
+    s.className = bad ? 'bad' : '';
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(refreshStatus, 2500);
+  }
+  function has(l, ch) {
+    for (var r = 0; r < l.rows; r++) if (l.map[r].indexOf(ch) >= 0) return true;
+    return false;
+  }
+  function refreshStatus() {
+    var l = cur(), s = $('status');
+    if (!has(l, '@')) { s.textContent = '⚠ нет героя'; s.className = 'bad'; }
+    else if (!has(l, 'E')) { s.textContent = '⚠ нет выхода'; s.className = 'bad'; }
+    else { s.textContent = 'сохранено ✓'; s.className = ''; }
+  }
+
+  /* ---------- Вкладки ---------- */
+  var tabBtns = document.querySelectorAll('#tabs button');
+  Array.prototype.forEach.call(tabBtns, function (b) {
+    b.onclick = function () {
+      Array.prototype.forEach.call(tabBtns, function (x) { x.classList.toggle('on', x === b); });
+      ['level', 'game', 'file'].forEach(function (n) { $('pane-' + n).hidden = (n !== b.getAttribute('data-tab')); });
+      if (b.getAttribute('data-tab') === 'file') $('code').value = '';
+    };
+  });
+
+  /* ---------- Вкладка «Уровень» ---------- */
+  $('lvName').oninput = function () { cur().name = this.value; save(); };
+
+  function resizeLevel(dc, dr) {
+    var l = cur();
+    var cols = clamp(l.cols + dc, 10, 150);
+    var rows = clamp(l.rows + dr, 6, 30);
+    var map = l.map.slice();
+    var r;
+    if (rows > l.rows) { for (r = l.rows; r < rows; r++) map.unshift('.'.repeat(l.cols)); }
+    else if (rows < l.rows) { map = map.slice(l.rows - rows); }
+    map = map.map(function (row) {
+      return cols >= row.length ? row + '.'.repeat(cols - row.length) : row.slice(0, cols);
+    });
+    l.map = map; l.cols = cols; l.rows = rows;
+    undo = [];
+    save();
+    clampPan();
+    refreshAll();
+  }
+  $('wMinus').onclick = function () { resizeLevel(-5, 0); };
+  $('wPlus').onclick = function () { resizeLevel(5, 0); };
+  $('hMinus').onclick = function () { resizeLevel(0, -1); };
+  $('hPlus').onclick = function () { resizeLevel(0, 1); };
+  armed($('lvClear'), 'Точно очистить?', function () {
+    var l = cur();
+    l.map = R.newLevel(l.name, l.cols, l.rows).map;
+    undo = [];
+    save();
+    refreshAll();
+  });
+
+  /* ---------- Вкладка «Игра» ---------- */
+  function buildGamePane() {
+    var th = $('themes'), co = $('colors');
+    th.textContent = ''; co.textContent = '';
+    Object.keys(R.THEMES).forEach(function (k) {
+      var b = document.createElement('button');
+      b.textContent = R.THEMES[k].name;
+      if (game.settings.theme === k) b.className = 'on';
+      b.onclick = function () { game.settings.theme = k; save(); buildGamePane(); buildPalette(); dirty = true; };
+      th.appendChild(b);
+    });
+    R.COLORS.forEach(function (c) {
+      var b = document.createElement('button');
+      b.className = 'sw' + (game.settings.playerColor === c ? ' on' : '');
+      b.style.background = c;
+      b.onclick = function () { game.settings.playerColor = c; save(); buildGamePane(); buildPalette(); dirty = true; };
+      co.appendChild(b);
+    });
+    var s = game.settings;
+    $('spd').value = s.speed; $('jmp').value = s.jump; $('grv').value = s.gravity;
+    $('spVal').textContent = s.speed; $('jpVal').textContent = s.jump; $('grVal').textContent = s.gravity;
+    $('jumpHint').textContent = 'Герой прыгает примерно на ' + R.jumpTiles(s).toFixed(1) + ' клетки вверх. Не делай ступеньки выше — не допрыгнет.';
+  }
+  function bindSlider(id, key) {
+    $(id).oninput = function () { game.settings[key] = Number(this.value); save(); buildGamePane(); };
+  }
+  bindSlider('spd', 'speed');
+  bindSlider('jmp', 'jump');
+  bindSlider('grv', 'gravity');
+
+  /* ---------- Вкладка «Файл» ---------- */
+  $('author').oninput = function () { game.author = this.value; save(); };
+  $('btnShow').onclick = function () { $('code').value = JSON.stringify(game); };
+  $('btnLoad').onclick = function () {
+    var t = $('code').value.trim();
+    if (!t) { $('pubStatus').textContent = 'Вставь код игры в поле и нажми «Загрузить».'; return; }
+    try {
+      game = R.sanitize(JSON.parse(t));
+      li = 0; undo = [];
+      save();
+      refreshAll();
+      $('pubStatus').textContent = 'Игра загружена.';
+    } catch (e) {
+      $('pubStatus').textContent = 'Не получилось прочитать код: ' + e.message;
+    }
+  };
+  armed($('btnNew'), 'Точно? Всё сотрётся', function () {
+    game = R.defaultGame();
+    li = 0; undo = [];
+    save();
+    refreshAll();
+  });
+
+  function uuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      var r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 3 | 8)).toString(16);
+    });
+  }
+
+  $('btnPub').onclick = function () {
+    var st = $('pubStatus'), btn = $('btnPub');
+    if (!cfg.supabaseUrl || !cfg.supabaseKey) { st.textContent = 'Облако не подключено: впиши ключи в config.js.'; return; }
+    if (!game.title.trim()) { st.textContent = 'Придумай название игры (вверху слева).'; return; }
+    if (!has(cur(), '@') && !game.levels.some(function (l) { return has(l, '@'); })) { st.textContent = 'Поставь героя на карту.'; return; }
+    var last = Number(localStorage.getItem('mk_last_pub')) || 0;
+    if (Date.now() - last < 30000) { st.textContent = 'Подожди полминуты и попробуй снова.'; return; }
+    var id = uuid();
+    var clean = R.sanitize(game);
+    btn.disabled = true;
+    st.textContent = 'Отправляю…';
+    fetch(cfg.supabaseUrl.replace(/\/$/, '') + '/rest/v1/games', {
+      method: 'POST',
+      headers: {
+        apikey: cfg.supabaseKey,
+        Authorization: 'Bearer ' + cfg.supabaseKey,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal'
+      },
+      body: JSON.stringify({ id: id, title: clean.title, author: clean.author, data: clean })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      localStorage.setItem('mk_last_pub', String(Date.now()));
+      var link = new URL('play.html?id=' + id, location.href).href;
+      $('pubLink').value = link;
+      $('pubEmbed').value = '<iframe src="' + link + '" width="800" height="450" style="border:0" allow="fullscreen"></iframe>';
+      $('pubOut').hidden = false;
+      st.textContent = 'Готово! Ссылка уже работает. В общем списке игра появится после проверки.';
+    }).catch(function (e) {
+      st.textContent = 'Не вышло: ' + e.message;
+    }).then(function () { btn.disabled = false; });
+  };
+
+  function copy(inputId, btnId) {
+    $(btnId).onclick = function () {
+      var el = $(inputId), b = $(btnId);
+      el.focus(); el.select();
+      var done = function () { b.textContent = '✓'; setTimeout(function () { b.textContent = '⧉'; }, 1200); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(el.value).then(done, done);
+      else { try { document.execCommand('copy'); } catch (e) { /* ignore */ } done(); }
+    };
+  }
+  copy('pubLink', 'cpLink');
+  copy('pubEmbed', 'cpEmbed');
+
+  /* ---------- Тест игры ---------- */
+  $('btnPlay').onclick = function () {
+    var l = cur();
+    if (!has(l, '@')) { setStatus('Сначала поставь героя на карту', true); return; }
+    try {
+      localStorage.setItem('mk_test_game', JSON.stringify({ game: game, level: li }));
+    } catch (e) { setStatus('Не удалось запустить тест', true); return; }
+    $('testFrame').src = 'play.html?t=' + Date.now() + '#test';
+    $('testWrap').hidden = false;
+  };
+  window.addEventListener('message', function (ev) {
+    if (ev.origin !== location.origin) return;
+    if (ev.data && ev.data.type === 'mk-exit') {
+      $('testWrap').hidden = true;
+      $('testFrame').src = 'about:blank';
+    }
+  });
+
+  /* ---------- Обновить всё ---------- */
+  function refreshAll() {
+    var l = cur();
+    $('gTitle').value = game.title;
+    $('author').value = game.author || '';
+    $('lvLabel').textContent = (li + 1) + '/' + game.levels.length;
+    $('lvName').value = l.name;
+    $('wVal').textContent = l.cols;
+    $('hVal').textContent = l.rows;
+    buildGamePane();
+    buildPalette();
+    refreshStatus();
+    clampPan();
+    dirty = true;
+  }
+
+  fit();
+  refreshAll();
+})();
+</script>
+</body>
+</html>
